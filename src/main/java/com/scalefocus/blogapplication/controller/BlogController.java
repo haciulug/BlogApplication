@@ -5,6 +5,7 @@ import com.scalefocus.blogapplication.dto.BlogPostSummaryDto;
 import com.scalefocus.blogapplication.dto.TagDto;
 import com.scalefocus.blogapplication.service.BlogService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,7 +24,7 @@ public class BlogController {
 
     @PostMapping
     public ResponseEntity<?> createBlog(@RequestBody @Valid BlogPostDto blogDto) {
-        return ResponseEntity.ok(blogService.createBlog(blogDto));
+        return ResponseEntity.status(HttpStatus.CREATED).body(blogService.createBlog(blogDto));
     }
 
     @GetMapping

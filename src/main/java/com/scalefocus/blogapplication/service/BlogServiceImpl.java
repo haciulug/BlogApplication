@@ -5,14 +5,17 @@ import com.scalefocus.blogapplication.dto.BlogPostSummaryDto;
 import com.scalefocus.blogapplication.dto.TagDto;
 import com.scalefocus.blogapplication.mapper.BlogPostMapper;
 import com.scalefocus.blogapplication.model.BlogPost;
+import com.scalefocus.blogapplication.model.Tag;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class BlogServiceImpl implements BlogService {
@@ -32,7 +35,20 @@ public class BlogServiceImpl implements BlogService {
     @Override
     @Transactional
     public BlogPostDto createBlog(BlogPostDto blogDto) {
+        if (blogDto == null) {
+            throw new IllegalArgumentException("Blog cannot be null");
+        }
         BlogPost blogPost = blogPostMapper.toEntity(blogDto);
+        Set<Tag> tags = new HashSet<>();
+        if (blogPost.getTags() == null) {
+            blogPost.setTags(tags);
+        }
+        for (Tag tag : blogPost.getTags()) {
+            Tag managedTag = tagService.findOrCreateTag(tag);
+            tags.add(managedTag);
+        }
+        blogPost.setTags(tags);
+
         BlogPostDto createdBlog = blogPostMapper.toDto(blogPostRepository.save(blogPost));
         LOGGER.info("Blog with id {} created", createdBlog.getId());
         return createdBlog;

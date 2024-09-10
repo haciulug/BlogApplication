@@ -6,34 +6,37 @@ import com.scalefocus.blogapplication.mapper.BlogPostMapper;
 import com.scalefocus.blogapplication.model.BlogPost;
 import com.scalefocus.blogapplication.model.Tag;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
-import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.platform.commons.annotation.Testable;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
 import java.util.Optional;
 
-@SpringBootTest
-@Transactional
+@Testable
+@ExtendWith(MockitoExtension.class)
 @ActiveProfiles("test")
 class BlogServiceImplTest {
 
-    @Autowired
-    private BlogService blogService;
+    @InjectMocks
+    private BlogServiceImpl blogService;
 
-    @MockBean
+    @Mock
     private BlogPostRepository blogPostRepository;
 
-    @MockBean
+    @Mock
     private BlogPostMapper blogPostMapper;
 
-    @MockBean
+    @Mock
     private TagService tagService;
 
     @Test
@@ -227,4 +230,59 @@ class BlogServiceImplTest {
         verify(blogPostMapper).toDtoList(List.of(blogPost));
     }
 
+    @Test
+    void updateBlog_ShouldReturnNull_WhenBlogDoesNotExist() {
+        Long blogId = 1L;
+        BlogPostDto dto = new BlogPostDto();
+        dto.setId(blogId);
+        dto.setTitle("Updated Title");
+        dto.setContent("Updated Content");
+
+        when(blogPostRepository.findById(blogId)).thenReturn(Optional.empty());
+
+        BlogPostDto result = blogService.updateBlog(blogId, dto);
+
+        assertNull(result);
+        verify(blogPostRepository, never()).save(any(BlogPost.class));
+    }
+
+    @Test
+    void createBlog_ShouldThrowException_WhenGivenNullBlog() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            blogService.createBlog(null);
+        });
+    }
+
+    @Test
+    void getBlog_ShouldReturnNull_WhenBlogDoesNotExist() {
+        Long blogId = 1L;
+        when(blogPostRepository.findById(blogId)).thenReturn(Optional.empty());
+
+        BlogPostDto result = blogService.getBlog(blogId);
+
+        assertNull(result);
+    }
+
+    @Test
+    void deleteBlog_ShouldHandleGracefully_WhenBlogDoesNotExist() {
+        Long blogId = 999L;  // Assume this ID does not exist
+
+        doNothing().when(blogPostRepository).deleteById(blogId);
+
+        assertDoesNotThrow(() -> blogService.deleteBlog(blogId));
+        verify(blogPostRepository).deleteById(blogId);
+    }
+
+    @Test
+    void createBlog_ShouldThrowException_WhenDatabaseErrorOccurs() {
+        BlogPostDto dto = new BlogPostDto();
+        dto.setTitle("New Blog");
+        dto.setContent("Content of new blog");
+
+        when(blogPostMapper.toEntity(any(BlogPostDto.class))).thenReturn(new BlogPost());
+        when(blogPostRepository.save(any(BlogPost.class))).thenThrow(RuntimeException.class);
+
+        assertThrows(RuntimeException.class, () -> blogService.createBlog(dto));
+        verify(blogPostRepository).save(any(BlogPost.class));
+    }
 }
