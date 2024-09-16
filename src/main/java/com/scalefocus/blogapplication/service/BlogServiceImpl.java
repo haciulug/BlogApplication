@@ -7,15 +7,21 @@ import com.scalefocus.blogapplication.mapper.BlogPostMapper;
 import com.scalefocus.blogapplication.model.BlogPost;
 import com.scalefocus.blogapplication.model.Tag;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
+import com.scalefocus.blogapplication.repository.UserRepository;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class BlogServiceImpl implements BlogService {
@@ -25,11 +31,13 @@ public class BlogServiceImpl implements BlogService {
     private final BlogPostRepository blogPostRepository;
     private final BlogPostMapper blogPostMapper;
     private final TagService tagService;
+    private final UserRepository userRepository;
 
-    public BlogServiceImpl(BlogPostRepository blogPostRepository, BlogPostMapper blogPostMapper, TagService tagService) {
+    public BlogServiceImpl(BlogPostRepository blogPostRepository, BlogPostMapper blogPostMapper, TagService tagService, UserRepository userRepository) {
         this.blogPostRepository = blogPostRepository;
         this.blogPostMapper = blogPostMapper;
         this.tagService = tagService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -48,6 +56,8 @@ public class BlogServiceImpl implements BlogService {
             tags.add(managedTag);
         }
         blogPost.setTags(tags);
+        blogPost.setUser(userRepository.findByUsername(SecurityContextHolder.getContext().getAuthentication().getName())
+                .orElseThrow(() -> new EntityNotFoundException("User not found")));
 
         BlogPostDto createdBlog = blogPostMapper.toDto(blogPostRepository.save(blogPost));
         LOGGER.info("Blog with id {} created", createdBlog.getId());
@@ -61,78 +71,86 @@ public class BlogServiceImpl implements BlogService {
 
     @Override
     public void deleteBlog(Long id) {
-        blogPostRepository.deleteById(id);
-        LOGGER.info("Blog with id {} deleted", id);
+        BlogPost blogPost = blogPostRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Blog not found"));
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        if (!blogPost.getUser().getUsername().equals(currentUsername)) {
+            throw new AccessDeniedException("You can only delete your own posts");
+        }
+        blogPostRepository.delete(blogPost);
+        LOGGER.info("Blog with id {} deleted by user {}", id, currentUsername);
     }
 
     @Override
     public BlogPostDto getBlog(Long id) {
-        return blogPostMapper.toDto(blogPostRepository.findById(id).orElse(null));
+        BlogPost blogPost = blogPostRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Blog not found with id " + id));
+        return blogPostMapper.toDto(blogPost);
     }
 
     @Override
     public BlogPostDto updateBlog(Long id, BlogPostDto blogDto) {
-        Optional<BlogPost> blogPost = blogPostRepository.findById(id);
-        if (blogPost.isPresent()) {
-            BlogPost updatedBlog = blogPostMapper.toEntity(blogDto);
-            updatedBlog.setId(id);
-            updatedBlog.setTags(blogPost.get().getTags());
-            BlogPostDto updatedBlogDto = blogPostMapper.toDto(blogPostRepository.save(updatedBlog));
-            LOGGER.info("Blog with id {} updated", id);
-            return updatedBlogDto;
+        BlogPost blogPost = blogPostRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Blog not found with id " + id));
+        if (!blogPost.getUser().getUsername().equals(SecurityContextHolder.getContext().getAuthentication().getName())) {
+            throw new AccessDeniedException("You can only update your own posts");
         }
-        LOGGER.error("Blog with id {} not found", id);
-        return null;
+        blogPost.setTitle(blogDto.getTitle());
+        blogPost.setContent(blogDto.getContent());
+        Set<Tag> tags = Optional.ofNullable(blogDto.getTags())
+                .map(tagDtos -> tagDtos.stream()
+                        .map(tagService::toEntity)
+                        .collect(Collectors.toSet()))
+                .orElse(Collections.emptySet());
+        blogPost.setTags(tags);
+        blogPostRepository.save(blogPost);
+        LOGGER.info("Blog with id {} updated", id);
+        return blogPostMapper.toDto(blogPost);
     }
 
     @Override
     public BlogPostDto addTag(Long id, TagDto tag) {
-        Optional<BlogPost> blogPost = blogPostRepository.findById(id);
-        if (blogPost.isPresent()) {
-            TagDto createdTag = tagService.createTag(tag);
-            blogPost.get().getTags().add(tagService.toEntity(createdTag));
-            BlogPostDto updatedBlog = blogPostMapper.toDto(blogPostRepository.save(blogPost.get()));
-            LOGGER.info("Tag {} added to blog with id {}", tag.getName(), id);
-            return updatedBlog;
-        }
-        LOGGER.error("Blog with id {} not found", id);
-        return null;
+        BlogPost blogPost = blogPostRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Blog not found with id " + id));
+
+        Tag managedTag = tagService.findOrCreateTag(tagService.toEntity(tag));
+        blogPost.getTags().add(managedTag);
+        blogPostRepository.save(blogPost);
+
+        LOGGER.info("Tag {} added to blog with id {}", tag.getName(), id);
+        return blogPostMapper.toDto(blogPost);
     }
 
     @Override
     public BlogPostDto addTagByName(Long id, String tagName) {
-        Optional<BlogPost> blogPost = blogPostRepository.findById(id);
-        if (blogPost.isPresent()) {
-            TagDto tag = tagService.getTagByName(tagName);
-            if (tag == null) {
-                tag = tagService.createTag(TagDto.builder().name(tagName).build());
-            }
-            blogPost.get().getTags().add(tagService.toEntity(tag));
-            BlogPostDto updatedBlog = blogPostMapper.toDto(blogPostRepository.save(blogPost.get()));
-            LOGGER.info("Tag {} added to blog with id {}", tagName, id);
-            return updatedBlog;
-        }
-        LOGGER.error("Blog with id {} not found", id);
-        return null;
+        return blogPostRepository.findById(id)
+                .map(blogPost -> {
+                    TagDto tag = tagService.getTagByName(tagName);
+                    if (tag == null) {
+                        // Tag doesn't exist, create it
+                        tag = tagService.createTag(TagDto.builder().name(tagName).build());
+                    }
+                    Tag tagEntity = tagService.toEntity(tag);
+                    blogPost.getTags().add(tagEntity);
+                    blogPostRepository.save(blogPost);
+                    LOGGER.info("Tag {} added to blog with id {}", tagName, id);
+                    return blogPostMapper.toDto(blogPost);
+                })
+                .orElseThrow(() -> new EntityNotFoundException("Blog post with ID " + id + " not found"));
     }
 
     @Override
     public BlogPostDto removeTag(Long id, String tagName) {
-        Optional<BlogPost> blogPost = blogPostRepository.findById(id);
-        if (blogPost.isPresent()) {
-            TagDto tag = tagService.getTagByName(tagName);
-            blogPost.get().getTags().remove(tagService.toEntity(tag));
-            BlogPostDto updatedBlog = blogPostMapper.toDto(blogPostRepository.save(blogPost.get()));
-            LOGGER.info("Tag {} removed from blog with id {}", tagName, id);
-            return updatedBlog;
-        }
-        LOGGER.error("Blog with id {} not found", id);
-        return null;
+        return blogPostRepository.findById(id)
+                .map(blogPost -> {
+                    blogPost.getTags().removeIf(tag -> tag.getName().equals(tagName));
+                    blogPostRepository.save(blogPost);
+                    LOGGER.info("Tag {} removed from blog with id {}", tagName, id);
+                    return blogPostMapper.toDto(blogPost);
+                })
+                .orElseThrow(() -> new EntityNotFoundException("Blog post with ID " + id + " not found"));
     }
 
     @Override
     public List<BlogPostDto> getBlogsByTag(String tagName) {
-        return blogPostMapper.toDtoList(blogPostRepository.findAllByTagsContains(tagName));
+        return blogPostMapper.toDtoList(blogPostRepository.findAllByTags_Name(tagName));
     }
 
     @Override
@@ -141,5 +159,19 @@ public class BlogServiceImpl implements BlogService {
         return blogPosts.stream()
                 .map(blogPostMapper::toSummaryDto)
                 .toList();
+    }
+
+    @Override
+    public List<BlogPostDto> getBlogsByUser(Long userId) {
+        if (!userRepository.existsById(userId)) {
+            LOGGER.error("User with id {} not found", userId);
+            throw new EntityNotFoundException("User with id " + userId + " not found");
+        }
+        List<BlogPost> blogPosts = blogPostRepository.findAllByUser_Id(userId);
+        if (blogPosts.isEmpty()) {
+            LOGGER.error("No blogs found for user with id {}", userId);
+            throw new EntityNotFoundException("No blogs found for user with id " + userId);
+        }
+        return blogPostMapper.toDtoList(blogPosts);
     }
 }

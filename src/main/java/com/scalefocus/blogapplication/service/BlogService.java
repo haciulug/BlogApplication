@@ -26,4 +26,6 @@ public interface BlogService {
     BlogPostDto getBlog(Long id);
 
     BlogPostDto addTagByName(Long id, String tagName);
+
+    List<BlogPostDto> getBlogsByUser(Long userId);
 }

@@ -1,4 +1,4 @@
-package com.scalefocus.blogapplication.service;
+package com.scalefocus.blogapplication.service.integration;
 
 import com.scalefocus.blogapplication.dto.BlogPostDto;
 import com.scalefocus.blogapplication.dto.TagDto;
@@ -8,31 +8,36 @@ import com.scalefocus.blogapplication.model.Tag;
 import com.scalefocus.blogapplication.model.User;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
 import com.scalefocus.blogapplication.repository.UserRepository;
+import com.scalefocus.blogapplication.service.BlogService;
+import com.scalefocus.blogapplication.service.BlogServiceImpl;
+import com.scalefocus.blogapplication.service.TagService;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
-
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.platform.commons.annotation.Testable;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.Optional;
 
-@Testable
-@ExtendWith(MockitoExtension.class)
-@ActiveProfiles("test")
-class BlogServiceImplTest {
+import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+@SpringBootTest
+@Testcontainers
+class BlogServiceIntegrationCTest {
 
     @Mock
     private BlogPostRepository blogPostRepository;
@@ -63,6 +68,25 @@ class BlogServiceImplTest {
         SecurityContextHolder.setContext(securityContext);
 
         lenient().when(authentication.getName()).thenReturn("testUser");
+    }
+
+    @Container
+    private static MySQLContainer<?> mysqlContainer;
+
+    static {
+        String mysqlVersion = System.getProperty("MYSQL_VERSION", "8.0.26");
+        mysqlContainer = new MySQLContainer<>("mysql:" + mysqlVersion)
+                .withDatabaseName("integration-tests-db")
+                .withUsername("sa")
+                .withPassword("sa");
+        mysqlContainer.start();
+    }
+
+    @DynamicPropertySource
+    static void setDatasourceProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", mysqlContainer::getJdbcUrl);
+        registry.add("spring.datasource.username", mysqlContainer::getUsername);
+        registry.add("spring.datasource.password", mysqlContainer::getPassword);
     }
 
     @Test
@@ -342,5 +366,4 @@ class BlogServiceImplTest {
 
         assertThrows(EntityNotFoundException.class, () -> blogService.deleteBlog(nonExistentBlogId));
     }
-
 }
