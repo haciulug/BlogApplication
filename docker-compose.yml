@@ -1,0 +1,53 @@
+version: '3.9'
+
+services:
+  db:
+    image: mysql:8.0.26
+    restart: always
+    ports:
+        - "3306:3306"
+    volumes:
+        - ./mysql:/var/lib/mysql
+    networks:
+        - service-network
+    container_name: mysql
+    hostname: mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 2s
+      retries: 5
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mydb
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+
+
+  app:
+    image: haciulug/blog-application:0.0.1-SNAPSHOT
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+        SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/mydb
+        SPRING_DATASOURCE_USERNAME: user
+        SPRING_DATASOURCE_PASSWORD: password
+        SPRING_PROFILES_ACTIVE: prod
+#        JWT_SECRET: $JWT_SECRET
+#        JWT_EXPIRATION: $JWT_EXPIRATION
+#        JWT_REFRESH_EXPIRATION: $JWT_REFRESH_EXPIRATION
+
+    networks:
+      - service-network
+    container_name: blog-application
+    hostname: blog-application
+
+networks:
+    service-network:
+        driver: bridge
+
+volumes:
+    mysql:

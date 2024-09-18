@@ -1,11 +1,19 @@
-package com.scalefocus.blogapplication.service;
+package com.scalefocus.blogapplication.service.integration;
 
 import com.scalefocus.blogapplication.dto.BlogPostDto;
 import com.scalefocus.blogapplication.dto.BlogPostSummaryDto;
+import com.scalefocus.blogapplication.dto.RegistrationRequest;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
+import com.scalefocus.blogapplication.repository.UserRepository;
+import com.scalefocus.blogapplication.service.BlogService;
+import com.scalefocus.blogapplication.service.UserService;
+import jakarta.persistence.EntityNotFoundException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,11 +31,29 @@ class BlogServiceIntegrationTest {
     @Autowired
     private BlogPostRepository blogPostRepository;
 
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @BeforeEach
+    void setUp() {
+        registerAdmin();
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("admin", "admin"));
+        blogPostRepository.deleteAll();
+    }
+
+    private void registerAdmin() {
+        // Register the admin user
+        userService.register(new RegistrationRequest("admin", "admin", "Admin"));
+    }
+
     @Test
     void testCreateAndRetrieveBlog() {
-        // Create a blog post
+        // Create a blog post with a unique title
         BlogPostDto newBlog = new BlogPostDto();
-        newBlog.setTitle("Integration Test Blog");
+        newBlog.setTitle("Integration Test Blog " + System.currentTimeMillis());
         newBlog.setContent("Content for integration testing.");
         BlogPostDto createdBlog = blogService.createBlog(newBlog);
 
@@ -36,7 +62,7 @@ class BlogServiceIntegrationTest {
 
         // Retrieve the blog post
         BlogPostDto retrievedBlog = blogService.getBlog(createdBlog.getId());
-        assertEquals("Integration Test Blog", retrievedBlog.getTitle());
+        assertEquals(newBlog.getTitle(), retrievedBlog.getTitle());  // Use dynamically generated title
         assertEquals("Content for integration testing.", retrievedBlog.getContent());
     }
 
@@ -75,8 +101,8 @@ class BlogServiceIntegrationTest {
         blogService.deleteBlog(createdBlog.getId());
 
         // Attempt to retrieve the deleted blog
-        BlogPostDto deletedBlog = blogService.getBlog(createdBlog.getId());
-        assertNull(deletedBlog);
+        assertThrows(EntityNotFoundException.class, () -> blogService.getBlog(createdBlog.getId()));
+        assertNull(blogPostRepository.findById(createdBlog.getId()).orElse(null));
     }
 
     @Test
@@ -134,9 +160,9 @@ class BlogServiceIntegrationTest {
 
     @Test
     void testGetSummarizedBlogs() {
-        // Create a blog post
+        // Create a blog post with a unique title
         BlogPostDto newBlog = new BlogPostDto();
-        newBlog.setTitle("Summarized Blog");
+        newBlog.setTitle("Summarized Blog " + System.currentTimeMillis());  // Add a unique suffix
         newBlog.setContent("Content for summarized blog.");
         BlogPostDto createdBlog = blogService.createBlog(newBlog);
 
@@ -144,7 +170,7 @@ class BlogServiceIntegrationTest {
         BlogPostSummaryDto summarizedBlog = blogService.getSummarizedBlogs().get(0);
 
         assertNotNull(summarizedBlog);
-        assertEquals("Summarized Blog", summarizedBlog.getTitle());
+        assertEquals(newBlog.getTitle(), summarizedBlog.getTitle());  // Match with unique title
         assertEquals("Content for summarized blog.".substring(0, SUMMARY_LENGTH), summarizedBlog.getSummary());
     }
 }
