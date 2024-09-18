@@ -1,19 +1,21 @@
-package com.scalefocus.blogapplication;
+package com.scalefocus.blogapplication.service.integration;
 
-import com.scalefocus.blogapplication.dto.BlogPostDto;
-import com.scalefocus.blogapplication.dto.TagDto;
+import com.scalefocus.blogapplication.dto.*;
 import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -31,6 +33,43 @@ class BlogApiIntegrationTest {
 
     private String getRootUrl() {
         return "http://localhost:" + port;
+    }
+
+    @BeforeEach
+    void setUp() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("Authorization", "Bearer " + registerAndAuthenticateUser());
+        restTemplate.getRestTemplate().setInterceptors(List.of((request, body, execution) -> {
+            request.getHeaders().addAll(headers);
+            return execution.execute(request, body);
+        }));
+    }
+
+    private String registerAndAuthenticateUser() {
+        // Register the user
+        RegistrationRequest registrationRequest = new RegistrationRequest();
+        registrationRequest.setUsername("testUser123");
+        registrationRequest.setPassword("AdminPassword123");
+        registrationRequest.setDisplayName("Admin User");
+
+        restTemplate.postForEntity(
+                getRootUrl() + "/api/users/register",
+                registrationRequest,
+                AuthenticationResponse.class
+        );
+
+        // Authenticate the user
+        AuthenticationRequest authenticationRequest = new AuthenticationRequest();
+        authenticationRequest.setUsername("testUser123");
+        authenticationRequest.setPassword("AdminPassword123");
+
+        ResponseEntity<AuthenticationResponse> authResponse = restTemplate.postForEntity(
+                getRootUrl() + "/api/users/login",
+                authenticationRequest,
+                AuthenticationResponse.class
+        );
+
+        return Objects.requireNonNull(authResponse.getBody()).getJwtToken();
     }
 
     @Test
@@ -62,7 +101,7 @@ class BlogApiIntegrationTest {
 
         BlogPostDto updatedBlog = BlogPostDto.builder().title("Updated Title").content("Updated content.").build();
 
-        restTemplate.put(getRootUrl() + "/api/blogs/" + blogId, updatedBlog);
+        restTemplate.put(getRootUrl() + "/api/blogs/" + blogId, updatedBlog, BlogPostDto.class);
 
         BlogPostDto retrievedBlog = restTemplate.getForObject(getRootUrl() + "/api/blogs/" + blogId, BlogPostDto.class);
         assertEquals("Updated Title", retrievedBlog.getTitle());
@@ -82,8 +121,8 @@ class BlogApiIntegrationTest {
 
         try {
             ResponseEntity<BlogPostDto> getResponse = restTemplate.getForEntity(getRootUrl() + "/api/blogs/" + blogId, BlogPostDto.class);
-            if (getResponse.getBody() != null) {
-                fail("Blog was not deleted");
+            if (Objects.nonNull(getResponse.getBody().getTitle())) {
+                fail("Blog was not deleted.");
             }
         } catch (HttpClientErrorException ex) {
             assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());

@@ -2,10 +2,12 @@ package com.scalefocus.blogapplication.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.proxy.HibernateProxy;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
+import java.time.LocalDateTime;
 import java.util.HashSet;
-import java.util.Objects;
 import java.util.Set;
 
 @Getter
@@ -14,6 +16,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 @Entity
 @Table(name = "blog_posts")
+@EnableJpaAuditing
 public class BlogPost {
 
     @Id
@@ -35,19 +38,15 @@ public class BlogPost {
     @ToString.Exclude
     private Set<Tag> tags = new HashSet<>();
 
-    @Override
-    public final boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null) return false;
-        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
-        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
-        if (thisEffectiveClass != oEffectiveClass) return false;
-        BlogPost blogPost = (BlogPost) o;
-        return getId() != null && Objects.equals(getId(), blogPost.getId());
-    }
+    @ManyToOne
+    @JoinColumn(name = "user_id")
+    private User user;
 
-    @Override
-    public final int hashCode() {
-        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
-    }
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    private LocalDateTime updatedAt;
+
 }

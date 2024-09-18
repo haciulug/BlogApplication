@@ -1,5 +1,6 @@
 package com.scalefocus.blogapplication.dto;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,7 +15,9 @@ import java.util.Set;
 @AllArgsConstructor
 public class BlogPostDto {
     private Long id;
+    @NotBlank(message = "Title cannot be blank")
     private String title;
+    @NotBlank(message = "Content cannot be blank")
     private String content;
     private Set<TagDto> tags = new HashSet<>();
 }
