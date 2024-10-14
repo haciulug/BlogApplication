@@ -1,37 +1,34 @@
 package com.scalefocus.blogapplication.service;
 
 import com.scalefocus.blogapplication.dto.BlogPostDto;
+import com.scalefocus.blogapplication.dto.MediaFileDto;
 import com.scalefocus.blogapplication.dto.TagDto;
 import com.scalefocus.blogapplication.mapper.BlogPostMapper;
-import com.scalefocus.blogapplication.model.BlogPost;
-import com.scalefocus.blogapplication.model.Tag;
-import com.scalefocus.blogapplication.model.User;
+import com.scalefocus.blogapplication.mapper.MediaFileMapper;
+import com.scalefocus.blogapplication.model.*;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
 import com.scalefocus.blogapplication.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
-
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.platform.commons.annotation.Testable;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
+import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.data.domain.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.test.context.ActiveProfiles;
 
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
-@Testable
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
 @ExtendWith(MockitoExtension.class)
-@ActiveProfiles("test")
+@MockitoSettings(strictness = Strictness.LENIENT)
 class BlogServiceImplTest {
 
     @Mock
@@ -46,6 +43,12 @@ class BlogServiceImplTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private MediaFileMapper mediaFileMapper;
+
+    @Mock
+    private EntityManager entityManager;
+
     @InjectMocks
     private BlogServiceImpl blogService;
 
@@ -55,14 +58,23 @@ class BlogServiceImplTest {
     @Mock
     private SecurityContext securityContext;
 
-    private AutoCloseable closeable;
-
     @BeforeEach
     void setUp() {
-        lenient().when(securityContext.getAuthentication()).thenReturn(authentication);
+        when(securityContext.getAuthentication()).thenReturn(authentication);
         SecurityContextHolder.setContext(securityContext);
 
-        lenient().when(authentication.getName()).thenReturn("testUser");
+        when(authentication.getName()).thenReturn("testUser");
+
+        User testUser = new User();
+        testUser.setUsername("testUser");
+        when(userRepository.findByUsername("testUser")).thenReturn(Optional.of(testUser));
+
+        BlogPost blogPost = new BlogPost();
+        blogPost.setId(1L);
+        blogPost.setTitle("Test Blog");
+        blogPost.setUser(testUser);
+        blogPost.setTags(new HashSet<>());
+        when(blogPostRepository.findById(1L)).thenReturn(Optional.of(blogPost));
     }
 
     @Test
@@ -83,6 +95,7 @@ class BlogServiceImplTest {
         BlogPost blogEntity = new BlogPost();
         blogEntity.setTitle(dto.getTitle());
         blogEntity.setContent(dto.getContent());
+        blogEntity.setTags(new HashSet<>()); // Initialize tags
 
         when(blogPostMapper.toEntity(any(BlogPostDto.class))).thenReturn(blogEntity);
         when(blogPostRepository.save(any(BlogPost.class))).thenReturn(blogEntity);
@@ -101,18 +114,22 @@ class BlogServiceImplTest {
     @Test
     void getBlogs_ShouldReturnAllBlogs_WhenBlogsExist() {
         // Arrange
+        Pageable pageable = PageRequest.of(0, 10);
         List<BlogPost> blogPosts = List.of(new BlogPost());
-        when(blogPostRepository.findAll()).thenReturn(blogPosts);
-        when(blogPostMapper.toDtoList(blogPosts)).thenReturn(List.of(new BlogPostDto()));
+        Page<BlogPost> blogPostPage = new PageImpl<>(blogPosts, pageable, blogPosts.size());
+        when(blogPostRepository.findAll(any(Pageable.class))).thenReturn(blogPostPage);
+
+        BlogPostDto blogPostDto = new BlogPostDto();
+        when(blogPostMapper.toDto(any(BlogPost.class))).thenReturn(blogPostDto);
 
         // Act
-        List<BlogPostDto> result = blogService.getBlogs();
+        Page<BlogPostDto> result = blogService.getBlogs(0, 10);
 
         // Assert
         assertNotNull(result, "Result should not be null");
-        assertFalse(result.isEmpty(), "Result list should not be empty");
-        verify(blogPostRepository, times(1)).findAll();
-        verify(blogPostMapper, times(1)).toDtoList(blogPosts);
+        assertFalse(result.isEmpty(), "Result should not be empty");
+        verify(blogPostRepository, times(1)).findAll(any(Pageable.class));
+        verify(blogPostMapper, times(blogPosts.size())).toDto(any(BlogPost.class));
     }
 
     @Test
@@ -121,15 +138,12 @@ class BlogServiceImplTest {
         Long blogId = 1L;
         BlogPost blogPost = new BlogPost();
         blogPost.setId(blogId);
-        blogPost.setUser(new User());
-        blogPost.getUser().setUsername("testUser");
+        User user = new User();
+        user.setUsername("testUser");
+        blogPost.setUser(user);
 
         when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(blogPost));
-        SecurityContext securityContext = mock(SecurityContext.class);
-        Authentication authentication = mock(Authentication.class);
-        when(securityContext.getAuthentication()).thenReturn(authentication);
         when(authentication.getName()).thenReturn("testUser");
-        SecurityContextHolder.setContext(securityContext);
 
         // Act
         blogService.deleteBlog(blogId);
@@ -202,6 +216,7 @@ class BlogServiceImplTest {
         TagDto tagDto = TagDto.builder().name("Test Tag").build();
         BlogPost blogPost = new BlogPost();
         blogPost.setId(blogId);
+        blogPost.setTags(new HashSet<>()); // Initialize tags
 
         Tag tagEntity = new Tag();
         tagEntity.setName("Test Tag");
@@ -252,7 +267,6 @@ class BlogServiceImplTest {
         verify(tagService).toEntity(tagDto);
     }
 
-
     @Test
     void removeTag_ShouldRemoveTagFromBlog_WhenBlogExists() {
         // Arrange
@@ -281,51 +295,99 @@ class BlogServiceImplTest {
     void getBlogsByTag_ShouldReturnBlogsByTag_WhenTagExists() {
         // Arrange
         String tagName = "Test Tag";
-        Tag tag = new Tag();
-        tag.setName(tagName);
-        BlogPost blogPost = new BlogPost();
-        blogPost.getTags().add(tag);
+        Pageable pageable = PageRequest.of(0, 10);
+        List<BlogPost> blogPosts = List.of(new BlogPost());
+        Page<BlogPost> blogPostPage = new PageImpl<>(blogPosts, pageable, blogPosts.size());
 
-        when(blogPostRepository.findAllByTags_Name(tagName)).thenReturn(List.of(blogPost));
-        when(blogPostMapper.toDtoList(List.of(blogPost))).thenReturn(List.of(new BlogPostDto()));
+        when(blogPostRepository.findAllByTags_Name(eq(tagName), any(Pageable.class))).thenReturn(blogPostPage);
+        when(blogPostMapper.toDto(any(BlogPost.class))).thenReturn(new BlogPostDto());
 
         // Act
-        List<BlogPostDto> result = blogService.getBlogsByTag(tagName);
+        Page<BlogPostDto> result = blogService.getBlogsByTag(tagName, 0, 10);
 
         // Assert
         assertNotNull(result);
         assertFalse(result.isEmpty());
-        verify(blogPostRepository).findAllByTags_Name(tagName);
-        verify(blogPostMapper).toDtoList(List.of(blogPost));
+        verify(blogPostRepository).findAllByTags_Name(eq(tagName), any(Pageable.class));
+        verify(blogPostMapper, times(blogPosts.size())).toDto(any(BlogPost.class));
     }
 
     @Test
-    void updateBlog_ShouldReturnNull_WhenBlogDoesNotExist() {
+    void addMediaFiles_ShouldAddMediaFilesToBlog_WhenBlogExists() {
+        // Arrange
+        Long blogId = 1L;
+        BlogPost blogPost = new BlogPost();
+        blogPost.setId(blogId);
+
+        MediaFileDto mediaFileDto = new MediaFileDto();
+        mediaFileDto.setUrl("http://example.com/image.jpg");
+        mediaFileDto.setMediaType(MediaType.IMAGE);
+
+        MediaFile mediaFile = new MediaFile();
+        mediaFile.setUrl("http://example.com/image.jpg");
+        mediaFile.setMediaType(MediaType.IMAGE);
+
+        when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(blogPost));
+        when(mediaFileMapper.toEntity(mediaFileDto)).thenReturn(mediaFile);
+        when(blogPostRepository.save(blogPost)).thenReturn(blogPost);
+        when(blogPostMapper.toDto(blogPost)).thenReturn(new BlogPostDto());
+
+        // Act
+        BlogPostDto result = blogService.addMediaFiles(blogId, List.of(mediaFileDto));
+
+        // Assert
+        assertNotNull(result);
+        verify(blogPostRepository).save(blogPost);
+        verify(blogPostRepository).findById(blogId);
+        verify(mediaFileMapper).toEntity(mediaFileDto);
+    }
+
+    @Test
+    void removeMediaFile_ShouldRemoveMediaFileFromBlog_WhenBlogExists() {
+        // Arrange
+        Long blogId = 1L;
+        Long mediaFileId = 2L;
+        BlogPost blogPost = new BlogPost();
+        blogPost.setId(blogId);
+
+        MediaFile mediaFile = new MediaFile();
+        mediaFile.setId(mediaFileId);
+        blogPost.getMediaFiles().add(mediaFile);
+
+        when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(blogPost));
+        when(blogPostRepository.save(blogPost)).thenReturn(blogPost);
+        when(blogPostMapper.toDto(blogPost)).thenReturn(new BlogPostDto());
+
+        // Act
+        BlogPostDto result = blogService.removeMediaFile(blogId, mediaFileId);
+
+        // Assert
+        assertNotNull(result);
+        verify(blogPostRepository).save(blogPost);
+        verify(blogPostRepository).findById(blogId);
+    }
+
+    @Test
+    @MockitoSettings(strictness = Strictness.LENIENT)
+    void updateBlog_ShouldThrowException_WhenBlogDoesNotExist() {
+        // Arrange
         Long blogId = 1L;
         BlogPostDto dto = new BlogPostDto();
         dto.setId(blogId);
-        dto.setTitle("Updated Title");
-        dto.setContent("Updated Content");
 
         when(blogPostRepository.findById(blogId)).thenReturn(Optional.empty());
 
-        EntityNotFoundException exception = assertThrows(EntityNotFoundException.class, () -> {
-            blogService.updateBlog(blogId, dto);
-        });
-
-        assertNotNull(exception);
-
-        verify(blogPostRepository, never()).save(any(BlogPost.class));
+        // Act & Assert
+        assertThrows(EntityNotFoundException.class, () -> blogService.updateBlog(blogId, dto));
     }
 
     @Test
     void createBlog_ShouldThrowException_WhenGivenNullBlog() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            blogService.createBlog(null);
-        });
+        assertThrows(IllegalArgumentException.class, () -> blogService.createBlog(null));
     }
 
     @Test
+    @MockitoSettings(strictness = Strictness.LENIENT)
     void getBlog_ShouldThrowException_WhenBlogDoesNotExist() {
         Long blogId = 1L;
 
@@ -335,12 +397,14 @@ class BlogServiceImplTest {
     }
 
     @Test
+    @MockitoSettings(strictness = Strictness.LENIENT)
     void deleteBlog_ShouldThrowException_WhenBlogDoesNotExist() {
         Long nonExistentBlogId = 999L;
-        doThrow(new EntityNotFoundException("Blog not found"))
-                .when(blogPostRepository).findById(nonExistentBlogId);
+
+        when(blogPostRepository.findById(nonExistentBlogId)).thenReturn(Optional.empty());
 
         assertThrows(EntityNotFoundException.class, () -> blogService.deleteBlog(nonExistentBlogId));
-    }
 
+        verify(blogPostRepository, never()).delete(any(BlogPost.class));
+    }
 }

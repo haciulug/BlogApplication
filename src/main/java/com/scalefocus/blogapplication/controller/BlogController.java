@@ -2,6 +2,7 @@ package com.scalefocus.blogapplication.controller;
 
 import com.scalefocus.blogapplication.dto.BlogPostDto;
 import com.scalefocus.blogapplication.dto.BlogPostSummaryDto;
+import com.scalefocus.blogapplication.dto.MediaFileDto;
 import com.scalefocus.blogapplication.dto.TagDto;
 import com.scalefocus.blogapplication.service.BlogService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -10,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -37,8 +39,15 @@ public class BlogController {
     @ApiResponse(responseCode = "200", description = "Successfully retrieved list of blog posts")
     @ApiResponse(responseCode = "404", description = "No blog posts found")
     @GetMapping
-    public ResponseEntity<?> getBlogs() {
-        List<BlogPostDto> blogs = blogService.getBlogs();
+    public ResponseEntity<?> getBlogs(
+            @Parameter(description = "Page number", required = true)
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size", required = true)
+            @RequestParam(defaultValue = "10") int size) {
+        if (page < 0 || size <= 0) {
+            return ResponseEntity.badRequest().body("Page number must be >= 0 and size must be > 0");
+        }
+        Page<BlogPostDto> blogs = blogService.getBlogs(page, size);
         if (blogs.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
@@ -137,8 +146,15 @@ public class BlogController {
     @GetMapping("/tags/{tagName}/blogs")
     public ResponseEntity<?> getBlogsByTag(
             @Parameter(description = "Name of the tag", required = true)
-            @PathVariable String tagName) {
-        List<BlogPostDto> blogs = blogService.getBlogsByTag(tagName);
+            @PathVariable String tagName,
+            @Parameter(description = "Page number", required = true)
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size", required = true)
+            @RequestParam(defaultValue = "10") int size) {
+        if (page < 0 || size <= 0) {
+            return ResponseEntity.badRequest().body("Page number must be >= 0 and size must be > 0");
+        }
+        Page<BlogPostDto> blogs = blogService.getBlogsByTag(tagName, page, size);
         if (blogs.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
@@ -148,8 +164,15 @@ public class BlogController {
     @Operation(summary = "Get summarized blog posts", description = "Retrieves a list of blog posts with summaries.")
     @ApiResponse(responseCode = "200", description = "Successfully retrieved summarized blog posts")
     @GetMapping("/summarized")
-    public ResponseEntity<?> getSummarizedBlogs() {
-        List< BlogPostSummaryDto > blogs = blogService.getSummarizedBlogs();
+    public ResponseEntity<?> getSummarizedBlogs(
+            @Parameter(description = "Page number", required = true)
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size", required = true)
+            @RequestParam(defaultValue = "10") int size) {
+        if (page < 0 || size <= 0) {
+            return ResponseEntity.badRequest().body("Page number must be >= 0 and size must be > 0");
+        }
+        Page< BlogPostSummaryDto > blogs = blogService.getSummarizedBlogs(page, size);
         if (blogs.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
@@ -162,12 +185,64 @@ public class BlogController {
     @GetMapping("/user/{userId}/blogs")
     public ResponseEntity<?> getBlogsByUser(
             @Parameter(description = "ID of the user", required = true)
-            @PathVariable Long userId) {
-        List<BlogPostDto> blogs = blogService.getBlogsByUser(userId);
+            @PathVariable Long userId,
+            @Parameter(description = "Page number", required = true)
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size", required = true)
+            @RequestParam(defaultValue = "10") int size) {
+        if (page < 0 || size <= 0) {
+            return ResponseEntity.badRequest().body("Page number must be >= 0 and size must be > 0");
+        }
+        Page<BlogPostDto> blogs = blogService.getBlogsByUser(userId, page, size);
         if (blogs.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(blogs);
+    }
+
+    @Operation(summary = "Search blog posts", description = "Searches for blog posts containing the specified query.")
+    @ApiResponse(responseCode = "200", description = "Successfully retrieved search results")
+    @ApiResponse(responseCode = "404", description = "No blog posts found for the given query")
+    @GetMapping("/search")
+    public ResponseEntity<?> searchBlogs(
+            @Parameter(description = "Search query", required = true)
+            @RequestParam String query,
+            @Parameter(description = "Page number", required = true)
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size", required = true)
+            @RequestParam(defaultValue = "10") int size) {
+        if (page < 0 || size <= 0) {
+            return ResponseEntity.badRequest().body("Page number must be >= 0 and size must be > 0");
+        }
+        Page<BlogPostDto> blogs = blogService.searchBlogs(query, page, size);
+        if (blogs.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(blogs);
+    }
+
+    @Operation(summary = "Add media files to a blog post", description = "Adds images and/or videos to the specified blog post.")
+    @ApiResponse(responseCode = "200", description = "Media files added successfully")
+    @PostMapping("/{id}/media")
+    public ResponseEntity<?> addMediaFiles(
+            @Parameter(description = "ID of the blog post to add media to", required = true)
+            @PathVariable Long id,
+            @Parameter(description = "List of media files to add", required = true)
+            @Valid @RequestBody List<MediaFileDto> mediaFilesDto) {
+        BlogPostDto updatedBlogPost = blogService.addMediaFiles(id, mediaFilesDto);
+        return ResponseEntity.ok(updatedBlogPost);
+    }
+
+    @Operation(summary = "Remove a media file from a blog post", description = "Removes a specific media file from the blog post.")
+    @ApiResponse(responseCode = "200", description = "Media file removed successfully")
+    @DeleteMapping("/{id}/media/{mediaId}")
+    public ResponseEntity<?> removeMediaFile(
+            @Parameter(description = "ID of the blog post", required = true)
+            @PathVariable Long id,
+            @Parameter(description = "ID of the media file to remove", required = true)
+            @PathVariable Long mediaId) {
+        BlogPostDto updatedBlogPost = blogService.removeMediaFile(id, mediaId);
+        return ResponseEntity.ok(updatedBlogPost);
     }
 
 }

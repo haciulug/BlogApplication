@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Data
@@ -20,4 +21,5 @@ public class BlogPostDto {
     @NotBlank(message = "Content cannot be blank")
     private String content;
     private Set<TagDto> tags = new HashSet<>();
+    private List<MediaFileDto> mediaFiles = List.of();
 }

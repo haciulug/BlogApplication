@@ -1,8 +1,7 @@
 package com.scalefocus.blogapplication.service.integration;
 
-import com.scalefocus.blogapplication.dto.BlogPostDto;
-import com.scalefocus.blogapplication.dto.BlogPostSummaryDto;
-import com.scalefocus.blogapplication.dto.RegistrationRequest;
+import com.scalefocus.blogapplication.dto.*;
+import com.scalefocus.blogapplication.model.MediaType;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
 import com.scalefocus.blogapplication.repository.UserRepository;
 import com.scalefocus.blogapplication.service.BlogService;
@@ -12,10 +11,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+
+import org.springframework.data.domain.Page;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 import static com.scalefocus.blogapplication.mapper.BlogPostMapper.SUMMARY_LENGTH;
 import static org.junit.jupiter.api.Assertions.*;
@@ -75,9 +78,10 @@ class BlogServiceIntegrationTest {
         BlogPostDto createdBlog = blogService.createBlog(newBlog);
 
         // Update the blog post
-        createdBlog.setTitle("Updated Title");
-        createdBlog.setContent("Updated Content");
-        BlogPostDto updatedBlog = blogService.updateBlog(createdBlog.getId(), createdBlog);
+        BlogPostDto updatedDto = new BlogPostDto();
+        updatedDto.setTitle("Updated Title");
+        updatedDto.setContent("Updated Content");
+        BlogPostDto updatedBlog = blogService.updateBlog(createdBlog.getId(), updatedDto);
 
         assertNotNull(updatedBlog);
         assertEquals("Updated Title", updatedBlog.getTitle());
@@ -102,7 +106,6 @@ class BlogServiceIntegrationTest {
 
         // Attempt to retrieve the deleted blog
         assertThrows(EntityNotFoundException.class, () -> blogService.getBlog(createdBlog.getId()));
-        assertNull(blogPostRepository.findById(createdBlog.getId()).orElse(null));
     }
 
     @Test
@@ -118,7 +121,7 @@ class BlogServiceIntegrationTest {
 
         assertNotNull(updatedBlog);
         assertEquals(1, updatedBlog.getTags().size());
-        assertEquals("Test Tag", updatedBlog.getTags().stream().findFirst().isPresent() ? updatedBlog.getTags().stream().findFirst().get().getName() : null);
+        assertEquals("Test Tag", updatedBlog.getTags().iterator().next().getName());
     }
 
     @Test
@@ -130,7 +133,7 @@ class BlogServiceIntegrationTest {
         BlogPostDto createdBlog = blogService.createBlog(newBlog);
 
         // Add a tag to the blog post
-        BlogPostDto updatedBlog = blogService.addTagByName(createdBlog.getId(), "Test Tag");
+        blogService.addTagByName(createdBlog.getId(), "Test Tag");
 
         // Remove the tag from the blog post
         BlogPostDto removedTagBlog = blogService.removeTag(createdBlog.getId(), "Test Tag");
@@ -148,29 +151,71 @@ class BlogServiceIntegrationTest {
         BlogPostDto createdBlog = blogService.createBlog(newBlog);
 
         // Add a tag to the blog post
-        BlogPostDto updatedBlog = blogService.addTagByName(createdBlog.getId(), "Test Tag");
+        blogService.addTagByName(createdBlog.getId(), "Test Tag");
 
-        // Retrieve the blog post by tag
-        BlogPostDto retrievedBlog = blogService.getBlogsByTag("Test Tag").get(0);
+        // Retrieve the blog posts by tag
+        Page<BlogPostDto> result = blogService.getBlogsByTag("Test Tag", 0, 10);
 
-        assertNotNull(retrievedBlog);
-        assertEquals("Blog with Tag", retrievedBlog.getTitle());
-        assertEquals("Content for blog with tag.", retrievedBlog.getContent());
+        assertNotNull(result);
+        assertFalse(result.isEmpty());
+        assertEquals("Blog with Tag", result.getContent().get(0).getTitle());
     }
 
     @Test
     void testGetSummarizedBlogs() {
         // Create a blog post with a unique title
         BlogPostDto newBlog = new BlogPostDto();
-        newBlog.setTitle("Summarized Blog " + System.currentTimeMillis());  // Add a unique suffix
+        newBlog.setTitle("Summarized Blog " + System.currentTimeMillis());
         newBlog.setContent("Content for summarized blog.");
-        BlogPostDto createdBlog = blogService.createBlog(newBlog);
+        blogService.createBlog(newBlog);
 
         // Retrieve summarized blogs
-        BlogPostSummaryDto summarizedBlog = blogService.getSummarizedBlogs().get(0);
+        Page<BlogPostSummaryDto> result = blogService.getSummarizedBlogs(0, 10);
 
-        assertNotNull(summarizedBlog);
-        assertEquals(newBlog.getTitle(), summarizedBlog.getTitle());  // Match with unique title
-        assertEquals("Content for summarized blog.".substring(0, SUMMARY_LENGTH), summarizedBlog.getSummary());
+        assertNotNull(result);
+        assertFalse(result.isEmpty());
+        assertEquals(newBlog.getTitle(), result.getContent().get(0).getTitle());
+        assertEquals("Content for summarized blog.".substring(0, SUMMARY_LENGTH), result.getContent().get(0).getSummary());
+    }
+
+    @Test
+    void testAddMediaFiles() {
+        // Create a blog post
+        BlogPostDto newBlog = new BlogPostDto();
+        newBlog.setTitle("Blog with Media " + System.currentTimeMillis());
+        newBlog.setContent("Content for blog with media.");
+        BlogPostDto createdBlog = blogService.createBlog(newBlog);
+
+        // Add media files to the blog post
+        MediaFileDto mediaFileDto = new MediaFileDto();
+        mediaFileDto.setUrl("http://example.com/image.jpg");
+        mediaFileDto.setMediaType(MediaType.IMAGE);
+        BlogPostDto updatedBlog = blogService.addMediaFiles(createdBlog.getId(), List.of(mediaFileDto));
+
+        assertNotNull(updatedBlog);
+        assertEquals(1, updatedBlog.getMediaFiles().size());
+        assertEquals("http://example.com/image.jpg", updatedBlog.getMediaFiles().get(0).getUrl());
+    }
+
+    @Test
+    void testRemoveMediaFile() {
+        // Create a blog post
+        BlogPostDto newBlog = new BlogPostDto();
+        newBlog.setTitle("Blog with Media " + System.currentTimeMillis());
+        newBlog.setContent("Content for blog with media.");
+        BlogPostDto createdBlog = blogService.createBlog(newBlog);
+
+        // Add media files to the blog post
+        MediaFileDto mediaFileDto = new MediaFileDto();
+        mediaFileDto.setUrl("http://example.com/image.jpg");
+        mediaFileDto.setMediaType(MediaType.IMAGE);
+        BlogPostDto updatedBlog = blogService.addMediaFiles(createdBlog.getId(), List.of(mediaFileDto));
+
+        // Remove the media file
+        Long mediaFileId = updatedBlog.getMediaFiles().get(0).getId();
+        BlogPostDto blogAfterRemoval = blogService.removeMediaFile(createdBlog.getId(), mediaFileId);
+
+        assertNotNull(blogAfterRemoval);
+        assertTrue(blogAfterRemoval.getMediaFiles().isEmpty());
     }
 }

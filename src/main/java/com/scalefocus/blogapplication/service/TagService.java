@@ -15,4 +15,6 @@ public interface TagService {
     Tag toEntity(TagDto tagDto);
 
     Tag findOrCreateTag(Tag tag);
+
+    TagDto toDto(Tag tag);
 }
