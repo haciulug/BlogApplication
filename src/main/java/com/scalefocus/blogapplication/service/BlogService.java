@@ -5,6 +5,7 @@ import com.scalefocus.blogapplication.dto.BlogPostSummaryDto;
 import com.scalefocus.blogapplication.dto.MediaFileDto;
 import com.scalefocus.blogapplication.dto.TagDto;
 import org.springframework.data.domain.Page;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -33,7 +34,9 @@ public interface BlogService {
 
     Page<BlogPostDto> searchBlogs(String query, int page, int size);
 
-    BlogPostDto addMediaFiles(Long id, List<MediaFileDto> mediaFiles);
+    BlogPostDto addMediaFiles(Long id, List<MultipartFile> mediaFiles);
 
     BlogPostDto removeMediaFile(Long id, Long mediaFileId);
+
+    MediaFileDto getMediaFile(Long id, Long mediaFileId);
 }

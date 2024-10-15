@@ -8,9 +8,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.*;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
+import java.io.IOException;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -305,20 +310,33 @@ class BlogApiIntegrationTest {
     }
 
     @Test
-    void testAddMediaFiles() {
+    void testAddMediaFiles() throws IOException {
         // Create a blog post
-        BlogPostDto blogPostDto = BlogPostDto.builder().title("Blog with Media").content("Content with media.").build();
+        BlogPostDto blogPostDto = BlogPostDto.builder()
+                .title("Blog with Media")
+                .content("Content with media.")
+                .build();
         HttpEntity<BlogPostDto> request = new HttpEntity<>(blogPostDto, headers);
-        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", request, BlogPostDto.class);
+        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(
+                getRootUrl() + "/api/blogs", request, BlogPostDto.class);
         Long blogId = createResponse.getBody().getId();
 
-        // Add media files
-        MediaFileDto mediaFileDto = new MediaFileDto();
-        mediaFileDto.setUrl("http://example.com/image.jpg");
-        mediaFileDto.setMediaType(com.scalefocus.blogapplication.model.MediaType.IMAGE);
+        Resource imageResource = new ClassPathResource("test-image.jpg"); // Ensure this image exists in src/test/resources
 
-        HttpEntity<List<MediaFileDto>> mediaRequest = new HttpEntity<>(List.of(mediaFileDto), headers);
-        ResponseEntity<BlogPostDto> response = restTemplate.postForEntity(getRootUrl() + "/api/blogs/" + blogId + "/media", mediaRequest, BlogPostDto.class);
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("files", imageResource);
+
+        HttpHeaders fileHeaders = new HttpHeaders();
+        fileHeaders.setContentType(MediaType.MULTIPART_FORM_DATA);
+        fileHeaders.set("Authorization", headers.getFirst("Authorization"));
+
+        HttpEntity<MultiValueMap<String, Object>> mediaRequest = new HttpEntity<>(body, fileHeaders);
+
+        ResponseEntity<BlogPostDto> response = restTemplate.exchange(
+                getRootUrl() + "/api/blogs/" + blogId + "/media",
+                HttpMethod.POST,
+                mediaRequest,
+                BlogPostDto.class);
 
         assertNotNull(response.getBody());
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -326,28 +344,47 @@ class BlogApiIntegrationTest {
     }
 
     @Test
-    void testRemoveMediaFile() {
+    void testRemoveMediaFile() throws IOException {
         // Create a blog post
         String uniqueTitle = "Blog with Media " + UUID.randomUUID().toString();
-        BlogPostDto blogPostDto = BlogPostDto.builder().title(uniqueTitle).content("Content with media.").build();
+        BlogPostDto blogPostDto = BlogPostDto.builder()
+                .title(uniqueTitle)
+                .content("Content with media.")
+                .build();
         HttpEntity<BlogPostDto> request = new HttpEntity<>(blogPostDto, headers);
-        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", request, BlogPostDto.class);
+        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(
+                getRootUrl() + "/api/blogs", request, BlogPostDto.class);
         Long blogId = createResponse.getBody().getId();
 
-        // Add media files
-        MediaFileDto mediaFileDto = new MediaFileDto();
-        mediaFileDto.setUrl("http://example.com/image.jpg");
-        mediaFileDto.setMediaType(com.scalefocus.blogapplication.model.MediaType.IMAGE);
+        Resource imageResource = new ClassPathResource("test-image.jpg"); // Ensure this image exists
 
-        HttpEntity<List<MediaFileDto>> mediaRequest = new HttpEntity<>(List.of(mediaFileDto), headers);
-        ResponseEntity<BlogPostDto> addMediaResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs/" + blogId + "/media", mediaRequest, BlogPostDto.class);
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("files", imageResource);
+
+        HttpHeaders fileHeaders = new HttpHeaders();
+        fileHeaders.setContentType(MediaType.MULTIPART_FORM_DATA);
+        fileHeaders.set("Authorization", headers.getFirst("Authorization"));
+
+        HttpEntity<MultiValueMap<String, Object>> mediaRequest = new HttpEntity<>(body, fileHeaders);
+
+        ResponseEntity<BlogPostDto> addMediaResponse = restTemplate.exchange(
+                getRootUrl() + "/api/blogs/" + blogId + "/media",
+                HttpMethod.POST,
+                mediaRequest,
+                BlogPostDto.class);
+
         List<MediaFileDto> mediaFiles = addMediaResponse.getBody().getMediaFiles();
         assertFalse(mediaFiles.isEmpty(), "Media files list should not be empty");
         Long mediaFileId = mediaFiles.get(0).getId();
 
         // Remove media file
         HttpEntity<Void> deleteRequest = new HttpEntity<>(headers);
-        restTemplate.exchange(getRootUrl() + "/api/blogs/" + blogId + "/media/" + mediaFileId, HttpMethod.DELETE, deleteRequest, BlogPostDto.class);
+        restTemplate.exchange(
+                getRootUrl() + "/api/blogs/" + blogId + "/media/" + mediaFileId,
+                HttpMethod.DELETE,
+                deleteRequest,
+                Void.class
+        );
 
         // Verify media file is removed
         HttpEntity<Void> getRequest = new HttpEntity<>(headers);

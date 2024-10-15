@@ -17,12 +17,18 @@ import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.domain.*;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.util.StreamUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.*;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -313,33 +319,38 @@ class BlogServiceImplTest {
     }
 
     @Test
-    void addMediaFiles_ShouldAddMediaFilesToBlog_WhenBlogExists() {
+    void addMediaFiles_ShouldAddMediaFilesToBlog_WhenBlogExists() throws IOException {
         // Arrange
         Long blogId = 1L;
         BlogPost blogPost = new BlogPost();
         blogPost.setId(blogId);
 
-        MediaFileDto mediaFileDto = new MediaFileDto();
-        mediaFileDto.setUrl("http://example.com/image.jpg");
-        mediaFileDto.setMediaType(MediaType.IMAGE);
+        ClassPathResource imgFile = new ClassPathResource("test-image.jpg");
+        byte[] imageBytes = StreamUtils.copyToByteArray(imgFile.getInputStream());
 
-        MediaFile mediaFile = new MediaFile();
-        mediaFile.setUrl("http://example.com/image.jpg");
-        mediaFile.setMediaType(MediaType.IMAGE);
+        MultipartFile multipartFile = new MockMultipartFile(
+                "file",
+                "test-image.jpg",
+                "image/jpeg",
+                imageBytes
+        );
 
         when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(blogPost));
-        when(mediaFileMapper.toEntity(mediaFileDto)).thenReturn(mediaFile);
-        when(blogPostRepository.save(blogPost)).thenReturn(blogPost);
-        when(blogPostMapper.toDto(blogPost)).thenReturn(new BlogPostDto());
+        when(mediaFileMapper.toDto(any(MediaFile.class))).thenReturn(new MediaFileDto());
+
+        BlogPostDto blogPostDto = new BlogPostDto();
+        MediaFileDto mediaFileDto = new MediaFileDto();
+        blogPostDto.setMediaFiles(List.of(mediaFileDto));
+        when(blogPostMapper.toDto(any(BlogPost.class))).thenReturn(blogPostDto);
 
         // Act
-        BlogPostDto result = blogService.addMediaFiles(blogId, List.of(mediaFileDto));
+        BlogPostDto result = blogService.addMediaFiles(blogId, List.of(multipartFile));
 
         // Assert
         assertNotNull(result);
         verify(blogPostRepository).save(blogPost);
         verify(blogPostRepository).findById(blogId);
-        verify(mediaFileMapper).toEntity(mediaFileDto);
+        assertEquals(1, result.getMediaFiles().size());
     }
 
     @Test

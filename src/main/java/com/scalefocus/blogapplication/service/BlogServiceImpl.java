@@ -8,6 +8,7 @@ import com.scalefocus.blogapplication.mapper.BlogPostMapper;
 import com.scalefocus.blogapplication.mapper.MediaFileMapper;
 import com.scalefocus.blogapplication.model.BlogPost;
 import com.scalefocus.blogapplication.model.MediaFile;
+import com.scalefocus.blogapplication.model.MediaType;
 import com.scalefocus.blogapplication.model.Tag;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
 import com.scalefocus.blogapplication.repository.UserRepository;
@@ -26,12 +27,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -222,26 +223,47 @@ public class BlogServiceImpl implements BlogService {
         }
     }
 
-
     @Override
     @Transactional
-    public BlogPostDto addMediaFiles(Long postId, List<MediaFileDto> mediaFilesDto) {
+    public BlogPostDto addMediaFiles(Long postId, List<MultipartFile> files) {
         BlogPost blogPost = blogPostRepository.findById(postId)
                 .orElseThrow(() -> new EntityNotFoundException("Blog post not found"));
 
-        List<MediaFile> mediaFiles = mediaFilesDto.stream()
-                .map(dto -> {
-                    MediaFile mediaFile = mediaFileMapper.toEntity(dto);
-                    mediaFile.setBlogPost(blogPost);
-                    return mediaFile;
-                })
-                .collect(Collectors.toList());
+        List<MediaFile> mediaFiles = new ArrayList<>();
+
+        for (MultipartFile file : files) {
+            try {
+                MediaFile mediaFile = new MediaFile();
+                mediaFile.setContent(file.getBytes());
+                mediaFile.setMediaType(determineMediaType(file));
+                mediaFile.setSize(file.getSize());
+
+                if (mediaFile.getMediaType() == MediaType.IMAGE) {
+                    BufferedImage image = ImageIO.read(file.getInputStream());
+                    mediaFile.setWidth(image.getWidth());
+                    mediaFile.setHeight(image.getHeight());
+                }
+
+                mediaFile.setBlogPost(blogPost);
+                mediaFiles.add(mediaFile);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to store media file", e);
+            }
+        }
 
         blogPost.getMediaFiles().addAll(mediaFiles);
         blogPostRepository.save(blogPost);
 
         LOGGER.info("Media files added to blog post with id {}", postId);
         return blogPostMapper.toDto(blogPost);
+    }
+
+    private MediaType determineMediaType(MultipartFile file) {
+        String contentType = file.getContentType();
+        if (contentType != null && contentType.startsWith("image")) {
+            return MediaType.IMAGE;
+        }
+        return MediaType.VIDEO;
     }
 
     @Override
@@ -259,5 +281,18 @@ public class BlogServiceImpl implements BlogService {
 
         LOGGER.info("Media file with id {} removed from blog post with id {}", mediaFileId, postId);
         return blogPostMapper.toDto(blogPost);
+    }
+
+    @Override
+    public MediaFileDto getMediaFile(Long postId, Long mediaFileId) {
+        BlogPost blogPost = blogPostRepository.findById(postId)
+                .orElseThrow(() -> new EntityNotFoundException("Blog post not found"));
+
+        MediaFile mediaFile = blogPost.getMediaFiles().stream()
+                .filter(media -> media.getId().equals(mediaFileId))
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("Media file not found in the blog post"));
+
+        return mediaFileMapper.toDto(mediaFile);
     }
 }

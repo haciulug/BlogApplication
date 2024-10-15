@@ -13,11 +13,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import org.springframework.data.domain.Page;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.List;
 
 import static com.scalefocus.blogapplication.mapper.BlogPostMapper.SUMMARY_LENGTH;
@@ -179,37 +186,73 @@ class BlogServiceIntegrationTest {
     }
 
     @Test
-    void testAddMediaFiles() {
+    void testAddMediaFiles() throws IOException {
         // Create a blog post
         BlogPostDto newBlog = new BlogPostDto();
         newBlog.setTitle("Blog with Media " + System.currentTimeMillis());
         newBlog.setContent("Content for blog with media.");
         BlogPostDto createdBlog = blogService.createBlog(newBlog);
 
+        BufferedImage image = new BufferedImage(100, 200, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = image.createGraphics();
+        graphics.setPaint(Color.BLUE);
+        graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+        graphics.dispose();
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ImageIO.write(image, "jpg", baos);
+        baos.flush();
+        byte[] imageBytes = baos.toByteArray();
+        baos.close();
+
         // Add media files to the blog post
-        MediaFileDto mediaFileDto = new MediaFileDto();
-        mediaFileDto.setUrl("http://example.com/image.jpg");
-        mediaFileDto.setMediaType(MediaType.IMAGE);
-        BlogPostDto updatedBlog = blogService.addMediaFiles(createdBlog.getId(), List.of(mediaFileDto));
+        MultipartFile multipartFile = new MockMultipartFile(
+                "file",
+                "image.jpg",
+                "image/jpeg",
+                imageBytes
+        );
+
+        BlogPostDto updatedBlog = blogService.addMediaFiles(createdBlog.getId(), List.of(multipartFile));
 
         assertNotNull(updatedBlog);
         assertEquals(1, updatedBlog.getMediaFiles().size());
-        assertEquals("http://example.com/image.jpg", updatedBlog.getMediaFiles().get(0).getUrl());
+        MediaFileDto addedMediaFile = updatedBlog.getMediaFiles().get(0);
+        assertEquals(MediaType.IMAGE, addedMediaFile.getMediaType());
+        assertEquals(multipartFile.getSize(), addedMediaFile.getSize());
+        assertEquals(100, addedMediaFile.getWidth());
+        assertEquals(200, addedMediaFile.getHeight());
     }
 
     @Test
-    void testRemoveMediaFile() {
+    void testRemoveMediaFile() throws IOException {
         // Create a blog post
         BlogPostDto newBlog = new BlogPostDto();
         newBlog.setTitle("Blog with Media " + System.currentTimeMillis());
         newBlog.setContent("Content for blog with media.");
         BlogPostDto createdBlog = blogService.createBlog(newBlog);
 
+        BufferedImage image = new BufferedImage(100, 200, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = image.createGraphics();
+        graphics.setPaint(Color.BLUE);
+        graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+        graphics.dispose();
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ImageIO.write(image, "jpg", baos);
+        baos.flush();
+        byte[] imageBytes = baos.toByteArray();
+        baos.close();
+
         // Add media files to the blog post
-        MediaFileDto mediaFileDto = new MediaFileDto();
-        mediaFileDto.setUrl("http://example.com/image.jpg");
-        mediaFileDto.setMediaType(MediaType.IMAGE);
-        BlogPostDto updatedBlog = blogService.addMediaFiles(createdBlog.getId(), List.of(mediaFileDto));
+        MultipartFile multipartFile = new MockMultipartFile(
+                "file",
+                "image.jpg",
+                "image/jpeg",
+                imageBytes
+        );
+
+        BlogPostDto updatedBlog = blogService.addMediaFiles(createdBlog.getId(), List.of(multipartFile));
 
         // Remove the media file
         Long mediaFileId = updatedBlog.getMediaFiles().get(0).getId();

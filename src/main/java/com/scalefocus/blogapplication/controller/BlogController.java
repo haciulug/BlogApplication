@@ -12,9 +12,12 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -228,9 +231,33 @@ public class BlogController {
             @Parameter(description = "ID of the blog post to add media to", required = true)
             @PathVariable Long id,
             @Parameter(description = "List of media files to add", required = true)
-            @Valid @RequestBody List<MediaFileDto> mediaFilesDto) {
-        BlogPostDto updatedBlogPost = blogService.addMediaFiles(id, mediaFilesDto);
+            @RequestPart("files") List<MultipartFile> files) {
+        BlogPostDto updatedBlogPost = blogService.addMediaFiles(id, files);
         return ResponseEntity.ok(updatedBlogPost);
+    }
+
+    @GetMapping("/{blogId}/media/{mediaId}")
+    public ResponseEntity<byte[]> getMediaFile(
+            @PathVariable Long blogId,
+            @PathVariable Long mediaId) {
+
+        MediaFileDto mediaFileDto = blogService.getMediaFile(blogId, mediaId);
+
+        if (mediaFileDto == null || mediaFileDto.getContent() == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+
+        if (mediaFileDto.getMediaType() == com.scalefocus.blogapplication.model.MediaType.IMAGE) {
+            headers.setContentType(MediaType.IMAGE_JPEG);
+        } else if (mediaFileDto.getMediaType() == com.scalefocus.blogapplication.model.MediaType.VIDEO) {
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        }
+
+        headers.setContentLength(mediaFileDto.getSize());
+
+        return new ResponseEntity<>(mediaFileDto.getContent(), headers, HttpStatus.OK);
     }
 
     @Operation(summary = "Remove a media file from a blog post", description = "Removes a specific media file from the blog post.")

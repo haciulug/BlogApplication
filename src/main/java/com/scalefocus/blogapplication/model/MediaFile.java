@@ -16,8 +16,9 @@ public class MediaFile {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "file_url", nullable = false)
-    private String url;
+    @Lob
+    @Column(name = "file_content", nullable = false)
+    private byte[] content;
 
     @Column(name = "media_type", nullable = false)
     @Enumerated(EnumType.STRING)
@@ -25,6 +26,7 @@ public class MediaFile {
 
     private int width;
     private int height;
+    private long size;
 
     @ManyToOne
     @JoinColumn(name = "blog_post_id")
