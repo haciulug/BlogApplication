@@ -335,6 +335,13 @@ class BlogServiceImplTest {
                 imageBytes
         );
 
+        MediaFileDto ImageDto = MediaFileDto.builder()
+                .mediaType(MediaType.IMAGE)
+                .height(100)
+                .width(100)
+                .build();
+
+
         when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(blogPost));
         when(mediaFileMapper.toDto(any(MediaFile.class))).thenReturn(new MediaFileDto());
 
@@ -344,7 +351,7 @@ class BlogServiceImplTest {
         when(blogPostMapper.toDto(any(BlogPost.class))).thenReturn(blogPostDto);
 
         // Act
-        BlogPostDto result = blogService.addMediaFiles(blogId, List.of(multipartFile));
+        BlogPostDto result = blogService.addMediaFiles(blogId, List.of(multipartFile), List.of(ImageDto));
 
         // Assert
         assertNotNull(result);

@@ -326,6 +326,12 @@ class BlogApiIntegrationTest {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("files", imageResource);
 
+        MediaFileDto mediaFileDto = MediaFileDto.builder()
+                .height(100)
+                .width(100)
+                .build();
+        body.add("mediaFiles", List.of(mediaFileDto));
+
         HttpHeaders fileHeaders = new HttpHeaders();
         fileHeaders.setContentType(MediaType.MULTIPART_FORM_DATA);
         fileHeaders.set("Authorization", headers.getFirst("Authorization"));
@@ -360,6 +366,11 @@ class BlogApiIntegrationTest {
 
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("files", imageResource);
+        MediaFileDto mediaFileDto = MediaFileDto.builder()
+                .height(100)
+                .width(100)
+                .build();
+        body.add("mediaFiles", List.of(mediaFileDto));
 
         HttpHeaders fileHeaders = new HttpHeaders();
         fileHeaders.setContentType(MediaType.MULTIPART_FORM_DATA);

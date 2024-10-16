@@ -225,13 +225,14 @@ public class BlogServiceImpl implements BlogService {
 
     @Override
     @Transactional
-    public BlogPostDto addMediaFiles(Long postId, List<MultipartFile> files) {
+    public BlogPostDto addMediaFiles(Long postId, List<MultipartFile> files, List<MediaFileDto> mediaFileDtos) {
         BlogPost blogPost = blogPostRepository.findById(postId)
                 .orElseThrow(() -> new EntityNotFoundException("Blog post not found"));
 
         List<MediaFile> mediaFiles = new ArrayList<>();
 
-        for (MultipartFile file : files) {
+        for (int i = 0; i < files.size(); i++) {
+            MultipartFile file = files.get(i);
             try {
                 MediaFile mediaFile = new MediaFile();
                 mediaFile.setContent(file.getBytes());
@@ -239,9 +240,8 @@ public class BlogServiceImpl implements BlogService {
                 mediaFile.setSize(file.getSize());
 
                 if (mediaFile.getMediaType() == MediaType.IMAGE) {
-                    BufferedImage image = ImageIO.read(file.getInputStream());
-                    mediaFile.setWidth(image.getWidth());
-                    mediaFile.setHeight(image.getHeight());
+                    mediaFile.setWidth(mediaFileDtos.get(i).getWidth());
+                    mediaFile.setHeight(mediaFileDtos.get(i).getHeight());
                 }
 
                 mediaFile.setBlogPost(blogPost);

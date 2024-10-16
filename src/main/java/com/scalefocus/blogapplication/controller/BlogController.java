@@ -231,8 +231,10 @@ public class BlogController {
             @Parameter(description = "ID of the blog post to add media to", required = true)
             @PathVariable Long id,
             @Parameter(description = "List of media files to add", required = true)
-            @RequestPart("files") List<MultipartFile> files) {
-        BlogPostDto updatedBlogPost = blogService.addMediaFiles(id, files);
+            @RequestPart("files") List<MultipartFile> files,
+            @Parameter(description = "Media files DTO for the blog post", required = true)
+            @RequestPart("mediaFiles") List<MediaFileDto> mediaFiles) {
+        BlogPostDto updatedBlogPost = blogService.addMediaFiles(id, files, mediaFiles);
         return ResponseEntity.ok(updatedBlogPost);
     }
 

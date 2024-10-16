@@ -213,7 +213,15 @@ class BlogServiceIntegrationTest {
                 imageBytes
         );
 
-        BlogPostDto updatedBlog = blogService.addMediaFiles(createdBlog.getId(), List.of(multipartFile));
+        MediaFileDto mediaFileDto = MediaFileDto.builder()
+                .content(imageBytes)
+                .mediaType(MediaType.IMAGE)
+                .width(100)
+                .height(200)
+                .size(multipartFile.getSize())
+                .build();
+
+        BlogPostDto updatedBlog = blogService.addMediaFiles(createdBlog.getId(), List.of(multipartFile), List.of(mediaFileDto));
 
         assertNotNull(updatedBlog);
         assertEquals(1, updatedBlog.getMediaFiles().size());
@@ -252,7 +260,15 @@ class BlogServiceIntegrationTest {
                 imageBytes
         );
 
-        BlogPostDto updatedBlog = blogService.addMediaFiles(createdBlog.getId(), List.of(multipartFile));
+        MediaFileDto mediaFileDto = MediaFileDto.builder()
+                .content(imageBytes)
+                .mediaType(MediaType.IMAGE)
+                .width(100)
+                .height(200)
+                .size(multipartFile.getSize())
+                .build();
+
+        BlogPostDto updatedBlog = blogService.addMediaFiles(createdBlog.getId(), List.of(multipartFile), List.of(mediaFileDto));
 
         // Remove the media file
         Long mediaFileId = updatedBlog.getMediaFiles().get(0).getId();

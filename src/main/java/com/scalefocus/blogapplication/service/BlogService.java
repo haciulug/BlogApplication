@@ -34,7 +34,7 @@ public interface BlogService {
 
     Page<BlogPostDto> searchBlogs(String query, int page, int size);
 
-    BlogPostDto addMediaFiles(Long id, List<MultipartFile> mediaFiles);
+    BlogPostDto addMediaFiles(Long id, List<MultipartFile> mediaFiles, List<MediaFileDto> mediaFileDtos);
 
     BlogPostDto removeMediaFile(Long id, Long mediaFileId);
 
