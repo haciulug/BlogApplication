@@ -2,13 +2,10 @@ package com.scalefocus.blogapplication.service;
 
 import com.scalefocus.blogapplication.dto.BlogPostDto;
 import com.scalefocus.blogapplication.dto.BlogPostSummaryDto;
-import com.scalefocus.blogapplication.dto.MediaFileDto;
 import com.scalefocus.blogapplication.dto.TagDto;
 import com.scalefocus.blogapplication.mapper.BlogPostMapper;
 import com.scalefocus.blogapplication.mapper.MediaFileMapper;
 import com.scalefocus.blogapplication.model.BlogPost;
-import com.scalefocus.blogapplication.model.MediaFile;
-import com.scalefocus.blogapplication.model.MediaType;
 import com.scalefocus.blogapplication.model.Tag;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
 import com.scalefocus.blogapplication.repository.UserRepository;
@@ -27,11 +24,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -221,78 +214,5 @@ public class BlogServiceImpl implements BlogService {
             LOGGER.error("Error occurred while searching for blogs: {}", e.getMessage());
             throw new RuntimeException("Error occurred while searching for blogs", e);
         }
-    }
-
-    @Override
-    @Transactional
-    public BlogPostDto addMediaFiles(Long postId, List<MultipartFile> files, List<MediaFileDto> mediaFileDtos) {
-        BlogPost blogPost = blogPostRepository.findById(postId)
-                .orElseThrow(() -> new EntityNotFoundException("Blog post not found"));
-
-        List<MediaFile> mediaFiles = new ArrayList<>();
-
-        for (int i = 0; i < files.size(); i++) {
-            MultipartFile file = files.get(i);
-            try {
-                MediaFile mediaFile = new MediaFile();
-                mediaFile.setContent(file.getBytes());
-                mediaFile.setMediaType(determineMediaType(file));
-                mediaFile.setSize(file.getSize());
-
-                if (mediaFile.getMediaType() == MediaType.IMAGE) {
-                    mediaFile.setWidth(mediaFileDtos.get(i).getWidth());
-                    mediaFile.setHeight(mediaFileDtos.get(i).getHeight());
-                }
-
-                mediaFile.setBlogPost(blogPost);
-                mediaFiles.add(mediaFile);
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to store media file", e);
-            }
-        }
-
-        blogPost.getMediaFiles().addAll(mediaFiles);
-        blogPostRepository.save(blogPost);
-
-        LOGGER.info("Media files added to blog post with id {}", postId);
-        return blogPostMapper.toDto(blogPost);
-    }
-
-    private MediaType determineMediaType(MultipartFile file) {
-        String contentType = file.getContentType();
-        if (contentType != null && contentType.startsWith("image")) {
-            return MediaType.IMAGE;
-        }
-        return MediaType.VIDEO;
-    }
-
-    @Override
-    @Transactional
-    public BlogPostDto removeMediaFile(Long postId, Long mediaFileId) {
-        BlogPost blogPost = blogPostRepository.findById(postId)
-                .orElseThrow(() -> new EntityNotFoundException("Blog post not found"));
-
-        boolean removed = blogPost.getMediaFiles().removeIf(media -> media.getId().equals(mediaFileId));
-        if (!removed) {
-            throw new EntityNotFoundException("Media file not found in the blog post");
-        }
-
-        blogPostRepository.save(blogPost);
-
-        LOGGER.info("Media file with id {} removed from blog post with id {}", mediaFileId, postId);
-        return blogPostMapper.toDto(blogPost);
-    }
-
-    @Override
-    public MediaFileDto getMediaFile(Long postId, Long mediaFileId) {
-        BlogPost blogPost = blogPostRepository.findById(postId)
-                .orElseThrow(() -> new EntityNotFoundException("Blog post not found"));
-
-        MediaFile mediaFile = blogPost.getMediaFiles().stream()
-                .filter(media -> media.getId().equals(mediaFileId))
-                .findFirst()
-                .orElseThrow(() -> new EntityNotFoundException("Media file not found in the blog post"));
-
-        return mediaFileMapper.toDto(mediaFile);
     }
 }
