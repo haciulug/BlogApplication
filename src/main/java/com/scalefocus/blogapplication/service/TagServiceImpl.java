@@ -53,4 +53,9 @@ public class TagServiceImpl implements TagService {
     public Tag findOrCreateTag(Tag tag) {
         return tagRepository.findByName(tag.getName()).orElseGet(() -> tagRepository.save(tag));
     }
+
+    @Override
+    public TagDto toDto(Tag tag) {
+        return tagMapper.toDto(tag);
+    }
 }

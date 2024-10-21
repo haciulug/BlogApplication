@@ -7,67 +7,65 @@ import com.scalefocus.blogapplication.model.BlogPost;
 import com.scalefocus.blogapplication.model.Tag;
 import com.scalefocus.blogapplication.model.User;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
+import com.scalefocus.blogapplication.repository.TagRepository;
 import com.scalefocus.blogapplication.repository.UserRepository;
-import com.scalefocus.blogapplication.service.BlogService;
 import com.scalefocus.blogapplication.service.BlogServiceImpl;
 import com.scalefocus.blogapplication.service.TagService;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.data.domain.Page;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
 
 @SpringBootTest
 @Testcontainers
+@Transactional
 class BlogServiceIntegrationCTest {
 
-    @Mock
+    @Autowired
     private BlogPostRepository blogPostRepository;
 
-    @Mock
+    @Autowired
     private BlogPostMapper blogPostMapper;
 
-    @Mock
+    @Autowired
     private TagService tagService;
 
-    @Mock
+    @Autowired
     private UserRepository userRepository;
 
-    @InjectMocks
+    @Autowired
     private BlogServiceImpl blogService;
 
-    @Mock
-    private Authentication authentication;
-
-    @Mock
-    private SecurityContext securityContext;
-
-    private AutoCloseable closeable;
+    @Autowired
+    private TagRepository tagRepository;
 
     @BeforeEach
     void setUp() {
-        lenient().when(securityContext.getAuthentication()).thenReturn(authentication);
-        SecurityContextHolder.setContext(securityContext);
+        // Clear repositories to ensure a clean state
+        blogPostRepository.deleteAll();
+        userRepository.deleteAll();
 
-        lenient().when(authentication.getName()).thenReturn("testUser");
+        // Add test user with all required fields
+        User testUser = new User();
+        testUser.setUsername("testUser");
+        testUser.setPassword("password");
+        testUser.setDisplayName("Test User");
+        testUser.setAuthority("ROLE_USER"); // Set the appropriate authority
+        userRepository.save(testUser);
     }
 
     @Container
@@ -90,28 +88,12 @@ class BlogServiceIntegrationCTest {
     }
 
     @Test
+    @WithMockUser(username = "testUser", roles = {"USER"})
     void createBlog_ShouldCreateBlog_WhenGivenValidBlog() {
         // Arrange
         BlogPostDto dto = new BlogPostDto();
         dto.setTitle("Test Blog");
         dto.setContent("Test Content");
-
-        BlogPostDto returnedDto = new BlogPostDto();
-        returnedDto.setId(1L);
-        returnedDto.setTitle(dto.getTitle());
-        returnedDto.setContent(dto.getContent());
-
-        // Override default username for this test
-        when(authentication.getName()).thenReturn("testUser");
-
-        BlogPost blogEntity = new BlogPost();
-        blogEntity.setTitle(dto.getTitle());
-        blogEntity.setContent(dto.getContent());
-
-        when(blogPostMapper.toEntity(any(BlogPostDto.class))).thenReturn(blogEntity);
-        when(blogPostRepository.save(any(BlogPost.class))).thenReturn(blogEntity);
-        when(blogPostMapper.toDto(any(BlogPost.class))).thenReturn(returnedDto);
-        when(userRepository.findByUsername("testUser")).thenReturn(Optional.of(new User()));
 
         // Act
         BlogPostDto createdBlog = blogService.createBlog(dto);
@@ -119,90 +101,93 @@ class BlogServiceIntegrationCTest {
         // Assert
         assertNotNull(createdBlog);
         assertEquals("Test Blog", createdBlog.getTitle());
-        verify(blogPostRepository).save(any(BlogPost.class));
+        assertEquals("Test Content", createdBlog.getContent());
+        assertNotNull(createdBlog.getId());
+
+        // Verify that the blog post exists in the repository
+        Optional<BlogPost> savedBlogPost = blogPostRepository.findById(createdBlog.getId());
+        assertTrue(savedBlogPost.isPresent(), "Blog post should be saved in the repository");
+        assertEquals("Test Blog", savedBlogPost.get().getTitle(), "Title should match");
+        assertEquals("Test Content", savedBlogPost.get().getContent(), "Content should match");
     }
 
     @Test
     void getBlogs_ShouldReturnAllBlogs_WhenBlogsExist() {
         // Arrange
-        List<BlogPost> blogPosts = List.of(new BlogPost());
-        when(blogPostRepository.findAll()).thenReturn(blogPosts);
-        when(blogPostMapper.toDtoList(blogPosts)).thenReturn(List.of(new BlogPostDto()));
+        User user = userRepository.findByUsername("testUser").orElseThrow();
+        BlogPost blogPost = new BlogPost();
+        blogPost.setTitle("Test Blog");
+        blogPost.setContent("Test Content");
+        blogPost.setUser(user); // Set the user
+        blogPostRepository.save(blogPost);
 
         // Act
-        List<BlogPostDto> result = blogService.getBlogs();
+        Page<BlogPostDto> result = blogService.getBlogs(0, 10);
 
         // Assert
         assertNotNull(result, "Result should not be null");
         assertFalse(result.isEmpty(), "Result list should not be empty");
-        verify(blogPostRepository, times(1)).findAll();
-        verify(blogPostMapper, times(1)).toDtoList(blogPosts);
+        assertEquals(1, result.getTotalElements(), "Should return one blog post");
+        assertEquals("Test Blog", result.getContent().get(0).getTitle(), "Title should match");
     }
 
     @Test
+    @WithMockUser(username = "testUser", roles = {"USER"})
     void deleteBlog_ShouldRemoveBlog_WhenBlogExists() {
         // Arrange
-        Long blogId = 1L;
+        User user = userRepository.findByUsername("testUser").orElseThrow();
         BlogPost blogPost = new BlogPost();
-        blogPost.setId(blogId);
-        blogPost.setUser(new User());
-        blogPost.getUser().setUsername("testUser");
-
-        when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(blogPost));
-        SecurityContext securityContext = mock(SecurityContext.class);
-        Authentication authentication = mock(Authentication.class);
-        when(securityContext.getAuthentication()).thenReturn(authentication);
-        when(authentication.getName()).thenReturn("testUser");
-        SecurityContextHolder.setContext(securityContext);
+        blogPost.setTitle("Test Blog");
+        blogPost.setContent("Test Content");
+        blogPost.setUser(user);
+        blogPost = blogPostRepository.save(blogPost);
+        Long blogId = blogPost.getId();
 
         // Act
         blogService.deleteBlog(blogId);
 
         // Assert
-        verify(blogPostRepository).delete(blogPost);
+        Optional<BlogPost> deletedBlog = blogPostRepository.findById(blogId);
+        assertFalse(deletedBlog.isPresent(), "Blog post should be deleted from the repository");
     }
 
     @Test
     void getBlog_ShouldReturnBlog_WhenBlogExists() {
         // Arrange
-        Long blogId = 1L;
+        User user = userRepository.findByUsername("testUser").orElseThrow();
         BlogPost blogPost = new BlogPost();
-        blogPost.setId(blogId);
-        when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(blogPost));
-        when(blogPostMapper.toDto(blogPost)).thenReturn(new BlogPostDto());
+        blogPost.setTitle("Sample Blog");
+        blogPost.setContent("Sample Content");
+        blogPost.setUser(user);
+        blogPost = blogPostRepository.save(blogPost);
+        Long blogId = blogPost.getId();
 
         // Act
         BlogPostDto result = blogService.getBlog(blogId);
 
         // Assert
         assertNotNull(result);
-        verify(blogPostRepository).findById(blogId);
-        verify(blogPostMapper).toDto(blogPost);
+        assertEquals("Sample Blog", result.getTitle());
+        assertEquals("Sample Content", result.getContent());
     }
 
     @Test
+    @WithMockUser(username = "testUser", roles = {"USER"})
     void updateBlog_ShouldUpdateBlog_WhenBlogExists() {
         // Arrange
-        Long blogId = 1L;
-        String username = "testUser";
-
-        User user = new User();
-        user.setUsername(username);
+        User user = userRepository.findByUsername("testUser").orElseThrow();
 
         BlogPost existingBlog = new BlogPost();
-        existingBlog.setId(blogId);
-        existingBlog.setUser(user); // Associate the user
+        existingBlog.setTitle("Original Title");
+        existingBlog.setContent("Original Content");
+        existingBlog.setUser(user);
+        existingBlog = blogPostRepository.save(existingBlog);
+        Long blogId = existingBlog.getId();
 
         BlogPostDto dto = new BlogPostDto();
         dto.setId(blogId);
         dto.setTitle("Updated Title");
         dto.setContent("Updated Content");
-
-        when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(existingBlog));
-        when(blogPostRepository.save(existingBlog)).thenReturn(existingBlog);
-        when(blogPostMapper.toDto(existingBlog)).thenReturn(dto);
-
-        when(authentication.getName()).thenReturn(username);
 
         // Act
         BlogPostDto updatedBlog = blogService.updateBlog(blogId, dto);
@@ -213,133 +198,130 @@ class BlogServiceIntegrationCTest {
         assertEquals("Updated Title", updatedBlog.getTitle(), "Blog title should be updated");
         assertEquals("Updated Content", updatedBlog.getContent(), "Blog content should be updated");
 
-        // Verify interactions
-        verify(blogPostRepository).findById(blogId);
-        verify(blogPostRepository).save(existingBlog);
-        verify(blogPostMapper).toDto(existingBlog);
+        // Verify that the blog post in the repository has been updated
+        BlogPost savedBlogPost = blogPostRepository.findById(blogId).orElseThrow();
+        assertEquals("Updated Title", savedBlogPost.getTitle(), "Blog title should be updated in repository");
+        assertEquals("Updated Content", savedBlogPost.getContent(), "Blog content should be updated in repository");
     }
 
     @Test
     void addTag_ShouldAddTagToBlog_WhenBlogExists() {
         // Arrange
-        Long blogId = 1L;
-        TagDto tagDto = TagDto.builder().name("Test Tag").build();
+        User user = userRepository.findByUsername("testUser").orElseThrow();
         BlogPost blogPost = new BlogPost();
-        blogPost.setId(blogId);
+        blogPost.setTitle("Test Blog");
+        blogPost.setContent("Test Content");
+        blogPost.setUser(user);
+        blogPost = blogPostRepository.save(blogPost);
+        Long blogId = blogPost.getId();
 
-        Tag tagEntity = new Tag();
-        tagEntity.setName("Test Tag");
-
-        when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(blogPost));
-        when(tagService.toEntity(tagDto)).thenReturn(tagEntity);
-        when(tagService.findOrCreateTag(tagEntity)).thenReturn(tagEntity);
-        when(blogPostRepository.save(blogPost)).thenReturn(blogPost);
-        when(blogPostMapper.toDto(blogPost)).thenReturn(new BlogPostDto());
+        TagDto tagDto = TagDto.builder().name("Test Tag").build();
 
         // Act
         BlogPostDto result = blogService.addTag(blogId, tagDto);
 
         // Assert
         assertNotNull(result);
-        verify(blogPostRepository).save(blogPost);
-        verify(blogPostRepository).findById(blogId);
-        verify(tagService).findOrCreateTag(tagEntity);
+        assertTrue(result.getTags().stream().anyMatch(tag -> "Test Tag".equals(tag.getName())), "Tag should be added to the blog");
     }
 
     @Test
     void addTagByName_ShouldAddTagToBlog_WhenBlogExists() {
         // Arrange
-        Long blogId = 1L;
-        String tagName = "Test Tag";
+        User user = userRepository.findByUsername("testUser").orElseThrow();
         BlogPost blogPost = new BlogPost();
-        blogPost.setId(blogId);
+        blogPost.setTitle("Test Blog");
+        blogPost.setContent("Test Content");
+        blogPost.setUser(user);
+        blogPost = blogPostRepository.save(blogPost);
+        Long blogId = blogPost.getId();
 
-        TagDto tagDto = TagDto.builder().name(tagName).build();
-        Tag tagEntity = new Tag();
-        tagEntity.setName(tagName);
-
-        when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(blogPost));
-        when(tagService.getTagByName(tagName)).thenReturn(null); // Simulate tag not existing
-        when(tagService.createTag(any(TagDto.class))).thenReturn(tagDto);
-        when(tagService.toEntity(tagDto)).thenReturn(tagEntity);
-        when(blogPostRepository.save(blogPost)).thenReturn(blogPost);
-        when(blogPostMapper.toDto(blogPost)).thenReturn(new BlogPostDto());
+        String tagName = "Test Tag";
 
         // Act
         BlogPostDto result = blogService.addTagByName(blogId, tagName);
 
         // Assert
         assertNotNull(result);
-        verify(blogPostRepository).save(blogPost);
-        verify(blogPostRepository).findById(blogId);
-        verify(tagService).createTag(any(TagDto.class));
-        verify(tagService).toEntity(tagDto);
+        assertTrue(result.getTags().stream().anyMatch(tag -> tagName.equals(tag.getName())), "Tag should be added to the blog");
     }
-
 
     @Test
     void removeTag_ShouldRemoveTagFromBlog_WhenBlogExists() {
         // Arrange
-        Long blogId = 1L;
-        String tagName = "Test Tag";
-        BlogPost blogPost = new BlogPost();
-        blogPost.setId(blogId);
-        Tag tag = new Tag();
-        tag.setName(tagName);
-        blogPost.getTags().add(tag);
+        User user = userRepository.findByUsername("testUser").orElseThrow();
 
-        when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(blogPost));
-        when(blogPostRepository.save(blogPost)).thenReturn(blogPost);
-        when(blogPostMapper.toDto(blogPost)).thenReturn(new BlogPostDto());
+        // Create and save the Tag
+        Tag tag = new Tag();
+        tag.setName("Test Tag");
+        tag = tagRepository.save(tag);
+
+        // Create and save the BlogPost
+        BlogPost blogPost = new BlogPost();
+        blogPost.setTitle("Test Blog");
+        blogPost.setContent("Test Content");
+        blogPost.setUser(user);
+        blogPost.getTags().add(tag);
+        blogPost = blogPostRepository.save(blogPost);
+        Long blogId = blogPost.getId();
 
         // Act
-        BlogPostDto result = blogService.removeTag(blogId, tagName);
+        BlogPostDto result = blogService.removeTag(blogId, "Test Tag");
 
         // Assert
         assertNotNull(result);
-        verify(blogPostRepository).save(blogPost);
-        verify(blogPostRepository).findById(blogId);
+        assertFalse(result.getTags().stream().anyMatch(t -> t.getName().equals("Test Tag")), "Tag should be removed from the blog");
+
+        BlogPost updatedBlogPost = blogPostRepository.findById(blogId).orElseThrow();
+        assertFalse(updatedBlogPost.getTags().contains(tag), "Tag should be removed from the blog in the repository");
     }
 
     @Test
     void getBlogsByTag_ShouldReturnBlogsByTag_WhenTagExists() {
         // Arrange
-        String tagName = "Test Tag";
-        Tag tag = new Tag();
-        tag.setName(tagName);
-        BlogPost blogPost = new BlogPost();
-        blogPost.getTags().add(tag);
+        User user = userRepository.findByUsername("testUser").orElseThrow();
 
-        when(blogPostRepository.findAllByTags_Name(tagName)).thenReturn(List.of(blogPost));
-        when(blogPostMapper.toDtoList(List.of(blogPost))).thenReturn(List.of(new BlogPostDto()));
+        // Create and save the Tag
+        Tag tag = new Tag();
+        tag.setName("Test Tag");
+        tag = tagRepository.save(tag);
+
+        // Create and save the BlogPost
+        BlogPost blogPost = new BlogPost();
+        blogPost.setTitle("Blog with Tag");
+        blogPost.setContent("Content");
+        blogPost.setUser(user);
+        blogPost.getTags().add(tag);
+        blogPostRepository.save(blogPost);
 
         // Act
-        List<BlogPostDto> result = blogService.getBlogsByTag(tagName);
+        Page<BlogPostDto> result = blogService.getBlogsByTag("Test Tag", 0, 10);
 
         // Assert
         assertNotNull(result);
-        assertFalse(result.isEmpty());
-        verify(blogPostRepository).findAllByTags_Name(tagName);
-        verify(blogPostMapper).toDtoList(List.of(blogPost));
+        assertFalse(result.isEmpty(), "Should return blogs with the specified tag");
+        assertEquals(1, result.getTotalElements(), "Should return one blog post");
+        assertEquals("Blog with Tag", result.getContent().get(0).getTitle(), "Title should match");
     }
 
     @Test
-    void updateBlog_ShouldReturnNull_WhenBlogDoesNotExist() {
-        Long blogId = 1L;
+    void updateBlog_ShouldThrowException_WhenBlogDoesNotExist() {
+        Long blogId = 999L;
         BlogPostDto dto = new BlogPostDto();
         dto.setId(blogId);
         dto.setTitle("Updated Title");
         dto.setContent("Updated Content");
 
-        when(blogPostRepository.findById(blogId)).thenReturn(Optional.empty());
+        blogPostRepository.deleteAll();
 
+        // Act & Assert
         EntityNotFoundException exception = assertThrows(EntityNotFoundException.class, () -> {
             blogService.updateBlog(blogId, dto);
         });
 
         assertNotNull(exception);
+        assertEquals("Blog not found with id 999", exception.getMessage());
 
-        verify(blogPostRepository, never()).save(any(BlogPost.class));
     }
 
     @Test
@@ -351,9 +333,9 @@ class BlogServiceIntegrationCTest {
 
     @Test
     void getBlog_ShouldThrowException_WhenBlogDoesNotExist() {
-        Long blogId = 1L;
+        Long blogId = 999L;
 
-        when(blogPostRepository.findById(blogId)).thenReturn(Optional.empty());
+        blogPostRepository.deleteAll();
 
         assertThrows(EntityNotFoundException.class, () -> blogService.getBlog(blogId));
     }
@@ -361,9 +343,11 @@ class BlogServiceIntegrationCTest {
     @Test
     void deleteBlog_ShouldThrowException_WhenBlogDoesNotExist() {
         Long nonExistentBlogId = 999L;
-        doThrow(new EntityNotFoundException("Blog not found"))
-                .when(blogPostRepository).findById(nonExistentBlogId);
 
-        assertThrows(EntityNotFoundException.class, () -> blogService.deleteBlog(nonExistentBlogId));
+        EntityNotFoundException exception = assertThrows(EntityNotFoundException.class, () -> {
+            blogService.deleteBlog(nonExistentBlogId);
+        });
+
+        assertEquals("Blog not found", exception.getMessage());
     }
 }

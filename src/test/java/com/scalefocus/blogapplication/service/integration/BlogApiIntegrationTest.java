@@ -1,27 +1,21 @@
 package com.scalefocus.blogapplication.service.integration;
 
 import com.scalefocus.blogapplication.dto.*;
-import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.*;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.web.client.HttpClientErrorException;
 
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Transactional
 @ActiveProfiles("test")
 class BlogApiIntegrationTest {
 
@@ -31,18 +25,17 @@ class BlogApiIntegrationTest {
     @LocalServerPort
     private int port;
 
+    private HttpHeaders headers;
+
     private String getRootUrl() {
         return "http://localhost:" + port;
     }
 
     @BeforeEach
     void setUp() {
-        HttpHeaders headers = new HttpHeaders();
+        headers = new HttpHeaders();
         headers.add("Authorization", "Bearer " + registerAndAuthenticateUser());
-        restTemplate.getRestTemplate().setInterceptors(List.of((request, body, execution) -> {
-            request.getHeaders().addAll(headers);
-            return execution.execute(request, body);
-        }));
+        headers.setContentType(MediaType.APPLICATION_JSON);
     }
 
     private String registerAndAuthenticateUser() {
@@ -76,7 +69,8 @@ class BlogApiIntegrationTest {
     void testCreateBlogPost() {
         BlogPostDto blogPostDto = BlogPostDto.builder().title("Integration Test Blog").content("Integration test blog content.").build();
 
-        ResponseEntity<BlogPostDto> response = restTemplate.postForEntity(getRootUrl() + "/api/blogs", blogPostDto, BlogPostDto.class);
+        HttpEntity<BlogPostDto> request = new HttpEntity<>(blogPostDto, headers);
+        ResponseEntity<BlogPostDto> response = restTemplate.postForEntity(getRootUrl() + "/api/blogs", request, BlogPostDto.class);
 
         assertNotNull(response.getBody());
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
@@ -85,59 +79,93 @@ class BlogApiIntegrationTest {
 
     @Test
     void testGetAllBlogPosts() {
-        ResponseEntity<List> response = restTemplate.getForEntity(getRootUrl() + "/api/blogs", List.class);
+        String url = getRootUrl() + "/api/blogs?page=0&size=10";
+
+        HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+        ResponseEntity<PageResponse<BlogPostDto>> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                requestEntity,
+                new ParameterizedTypeReference<PageResponse<BlogPostDto>>() {}
+        );
 
         assertNotNull(response.getBody());
-        assertFalse(response.getBody().isEmpty());
+        assertFalse(response.getBody().getContent().isEmpty());
         assertEquals(HttpStatus.OK, response.getStatusCode());
     }
 
     @Test
     void testUpdateBlogPost() {
+        // Create a blog post
         BlogPostDto blogPostDto = BlogPostDto.builder().title("Blog to Update").content("Initial content.").build();
 
-        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", blogPostDto, BlogPostDto.class);
+        HttpEntity<BlogPostDto> request = new HttpEntity<>(blogPostDto, headers);
+        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", request, BlogPostDto.class);
         Long blogId = createResponse.getBody().getId();
 
+        // Update the blog post
         BlogPostDto updatedBlog = BlogPostDto.builder().title("Updated Title").content("Updated content.").build();
 
-        restTemplate.put(getRootUrl() + "/api/blogs/" + blogId, updatedBlog, BlogPostDto.class);
+        HttpEntity<BlogPostDto> updateRequest = new HttpEntity<>(updatedBlog, headers);
+        restTemplate.exchange(getRootUrl() + "/api/blogs/" + blogId, HttpMethod.PUT, updateRequest, BlogPostDto.class);
 
-        BlogPostDto retrievedBlog = restTemplate.getForObject(getRootUrl() + "/api/blogs/" + blogId, BlogPostDto.class);
-        assertEquals("Updated Title", retrievedBlog.getTitle());
-        assertEquals("Updated content.", retrievedBlog.getContent());
+        // Retrieve the updated blog post
+        HttpEntity<Void> getRequest = new HttpEntity<>(headers);
+        ResponseEntity<BlogPostDto> getResponse = restTemplate.exchange(
+                getRootUrl() + "/api/blogs/" + blogId,
+                HttpMethod.GET,
+                getRequest,
+                BlogPostDto.class
+        );
+
+        assertEquals("Updated Title", getResponse.getBody().getTitle());
+        assertEquals("Updated content.", getResponse.getBody().getContent());
     }
 
     @Test
     void testDeleteBlogPost() {
-        BlogPostDto blogPostDto = BlogPostDto.builder().title("Blog to Delete").content("Content of the blog to delete.").build();
-        blogPostDto.setTitle("Blog to Delete");
-        blogPostDto.setContent("Content of the blog to delete.");
+        // Create a blog post
+        BlogPostDto blogPostDto = BlogPostDto.builder().title("Blog to Delete").content("Content to delete.").build();
 
-        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", blogPostDto, BlogPostDto.class);
+        HttpEntity<BlogPostDto> request = new HttpEntity<>(blogPostDto, headers);
+        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", request, BlogPostDto.class);
         Long blogId = createResponse.getBody().getId();
 
-        restTemplate.delete(getRootUrl() + "/api/blogs/" + blogId);
+        // Delete the blog post
+        HttpEntity<Void> deleteRequest = new HttpEntity<>(headers);
+        restTemplate.exchange(getRootUrl() + "/api/blogs/" + blogId, HttpMethod.DELETE, deleteRequest, Void.class);
 
-        try {
-            ResponseEntity<BlogPostDto> getResponse = restTemplate.getForEntity(getRootUrl() + "/api/blogs/" + blogId, BlogPostDto.class);
-            if (Objects.nonNull(getResponse.getBody().getTitle())) {
-                fail("Blog was not deleted.");
-            }
-        } catch (HttpClientErrorException ex) {
-            assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
-        }
+        // Attempt to retrieve the deleted blog
+        HttpEntity<Void> getRequest = new HttpEntity<>(headers);
+        ResponseEntity<BlogPostDto> getResponse = restTemplate.exchange(
+                getRootUrl() + "/api/blogs/" + blogId,
+                HttpMethod.GET,
+                getRequest,
+                BlogPostDto.class
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, getResponse.getStatusCode());
     }
 
     @Test
     void testGetBlogPost() {
+        // Create a blog post
         BlogPostDto newBlog = new BlogPostDto();
         newBlog.setTitle("Specific Blog");
         newBlog.setContent("Specific content.");
-        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", newBlog, BlogPostDto.class);
+        HttpEntity<BlogPostDto> request = new HttpEntity<>(newBlog, headers);
+        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", request, BlogPostDto.class);
 
         Long id = createResponse.getBody().getId();
-        ResponseEntity<BlogPostDto> response = restTemplate.getForEntity(getRootUrl() + "/api/blogs/" + id, BlogPostDto.class);
+
+        // Retrieve the blog post
+        HttpEntity<Void> getRequest = new HttpEntity<>(headers);
+        ResponseEntity<BlogPostDto> response = restTemplate.exchange(
+                getRootUrl() + "/api/blogs/" + id,
+                HttpMethod.GET,
+                getRequest,
+                BlogPostDto.class
+        );
 
         assertNotNull(response.getBody());
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -146,15 +174,18 @@ class BlogApiIntegrationTest {
 
     @Test
     void testAddTag() {
+        // Create a blog post
         BlogPostDto newBlog = new BlogPostDto();
         newBlog.setTitle("Blog for Tagging");
         newBlog.setContent("Content before tagging.");
-        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", newBlog, BlogPostDto.class);
+        HttpEntity<BlogPostDto> request = new HttpEntity<>(newBlog, headers);
+        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", request, BlogPostDto.class);
 
         Long id = createResponse.getBody().getId();
         TagDto newTag = TagDto.builder().name("New Tag").build();
 
-        ResponseEntity<BlogPostDto> response = restTemplate.postForEntity(getRootUrl() + "/api/blogs/" + id + "/tag", newTag, BlogPostDto.class);
+        HttpEntity<TagDto> tagRequest = new HttpEntity<>(newTag, headers);
+        ResponseEntity<BlogPostDto> response = restTemplate.postForEntity(getRootUrl() + "/api/blogs/" + id + "/tag", tagRequest, BlogPostDto.class);
 
         assertNotNull(response.getBody());
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -163,43 +194,131 @@ class BlogApiIntegrationTest {
 
     @Test
     void testRemoveTag() {
+        // Create a blog post
         BlogPostDto newBlog = new BlogPostDto();
         newBlog.setTitle("Blog to Remove Tag");
         newBlog.setContent("Content with tag.");
-        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", newBlog, BlogPostDto.class);
+        HttpEntity<BlogPostDto> request = new HttpEntity<>(newBlog, headers);
+        ResponseEntity<BlogPostDto> createResponse = restTemplate.postForEntity(getRootUrl() + "/api/blogs", request, BlogPostDto.class);
         Long id = createResponse.getBody().getId();
 
-        restTemplate.postForEntity(getRootUrl() + "/api/blogs/" + id + "/tag", TagDto.builder().name("Initial Tag").build(), BlogPostDto.class);
+        // Add a tag to the blog post
+        TagDto tagDto = TagDto.builder().name("Initial Tag").build();
+        HttpEntity<TagDto> tagRequest = new HttpEntity<>(tagDto, headers);
+        restTemplate.postForEntity(getRootUrl() + "/api/blogs/" + id + "/tag", tagRequest, BlogPostDto.class);
 
-        restTemplate.delete(getRootUrl() + "/api/blogs/" + id + "/tag/Initial Tag");
+        // Remove the tag
+        HttpEntity<Void> deleteRequest = new HttpEntity<>(headers);
+        restTemplate.exchange(getRootUrl() + "/api/blogs/" + id + "/tag/Initial Tag", HttpMethod.DELETE, deleteRequest, Void.class);
 
-        ResponseEntity<BlogPostDto> response = restTemplate.getForEntity(getRootUrl() + "/api/blogs/" + id, BlogPostDto.class);
+        // Verify the tag is removed
+        HttpEntity<Void> getRequest = new HttpEntity<>(headers);
+        ResponseEntity<BlogPostDto> response = restTemplate.exchange(
+                getRootUrl() + "/api/blogs/" + id,
+                HttpMethod.GET,
+                getRequest,
+                BlogPostDto.class
+        );
+
         assertTrue(response.getBody().getTags().isEmpty());
     }
 
     @Test
     void testGetBlogsByTag() {
+        // Create blog posts with the tag
         TagDto tag = TagDto.builder().name("Tech").build();
         BlogPostDto blog1 = BlogPostDto.builder().title("Tagged Blog 1").content("Content 1").tags(Set.of(tag)).build();
         BlogPostDto blog2 = BlogPostDto.builder().title("Tagged Blog 2").content("Content 2").tags(Set.of(tag)).build();
-        restTemplate.postForEntity(getRootUrl() + "/api/blogs", blog1, BlogPostDto.class);
-        restTemplate.postForEntity(getRootUrl() + "/api/blogs", blog2, BlogPostDto.class);
 
-        ResponseEntity<List> response = restTemplate.getForEntity(getRootUrl() + "/api/blogs/tags/Tech/blogs", List.class);
+        HttpEntity<BlogPostDto> request1 = new HttpEntity<>(blog1, headers);
+        restTemplate.postForEntity(getRootUrl() + "/api/blogs", request1, BlogPostDto.class);
+
+        HttpEntity<BlogPostDto> request2 = new HttpEntity<>(blog2, headers);
+        restTemplate.postForEntity(getRootUrl() + "/api/blogs", request2, BlogPostDto.class);
+
+        // Retrieve blogs by tag
+        String url = getRootUrl() + "/api/blogs/tags/Tech/blogs?page=0&size=10";
+
+        HttpEntity<Void> getRequest = new HttpEntity<>(headers);
+        ResponseEntity<PageResponse<BlogPostDto>> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                getRequest,
+                new ParameterizedTypeReference<PageResponse<BlogPostDto>>() {}
+        );
 
         assertNotNull(response.getBody());
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals(2, response.getBody().size());
+        assertEquals(2, response.getBody().getContent().size());
     }
 
     @Test
     void testGetSummarizedBlogs() {
-        restTemplate.postForEntity(getRootUrl() + "/api/blogs", BlogPostDto.builder().title("Summarized Blog").content("Summarized content.").build(), BlogPostDto.class);
+        // Create a blog post
+        BlogPostDto blogPostDto = BlogPostDto.builder().title("Summarized Blog").content("Summarized content.").build();
+        HttpEntity<BlogPostDto> request = new HttpEntity<>(blogPostDto, headers);
+        restTemplate.postForEntity(getRootUrl() + "/api/blogs", request, BlogPostDto.class);
 
-        ResponseEntity<List> response = restTemplate.getForEntity(getRootUrl() + "/api/blogs/summarized", List.class);
+        // Retrieve summarized blogs
+        String url = getRootUrl() + "/api/blogs/summarized?page=0&size=10";
+
+        HttpEntity<Void> getRequest = new HttpEntity<>(headers);
+        ResponseEntity<PageResponse<BlogPostSummaryDto>> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                getRequest,
+                new ParameterizedTypeReference<PageResponse<BlogPostSummaryDto>>() {}
+        );
 
         assertNotNull(response.getBody());
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertFalse(response.getBody().isEmpty());
+        assertFalse(response.getBody().getContent().isEmpty());
+    }
+
+    @Test
+    void testSearchBlogs() {
+        // Create blog posts
+        BlogPostDto blog1 = BlogPostDto.builder().title("Searchable Blog 1").content("Content about Java.").build();
+        BlogPostDto blog2 = BlogPostDto.builder().title("Searchable Blog 2").content("Content about Spring.").build();
+
+        HttpEntity<BlogPostDto> request1 = new HttpEntity<>(blog1, headers);
+        restTemplate.postForEntity(getRootUrl() + "/api/blogs", request1, BlogPostDto.class);
+
+        HttpEntity<BlogPostDto> request2 = new HttpEntity<>(blog2, headers);
+        restTemplate.postForEntity(getRootUrl() + "/api/blogs", request2, BlogPostDto.class);
+
+        // Search blogs
+        String url = getRootUrl() + "/api/blogs/search?query=Java&page=0&size=10";
+
+        HttpEntity<Void> getRequest = new HttpEntity<>(headers);
+        ResponseEntity<PageResponse<BlogPostDto>> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                getRequest,
+                new ParameterizedTypeReference<PageResponse<BlogPostDto>>() {}
+        );
+
+        assertNotNull(response.getBody());
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(1, response.getBody().getContent().size());
+        assertEquals("Searchable Blog 1", response.getBody().getContent().get(0).getTitle());
+    }
+
+    private static class PageResponse<T> {
+        private List<T> content;
+        private int pageNumber;
+        private int pageSize;
+        private long totalElements;
+        private int totalPages;
+
+
+        public List<T> getContent() {
+            return content;
+        }
+
+        public void setContent(List<T> content) {
+            this.content = content;
+        }
+
     }
 }

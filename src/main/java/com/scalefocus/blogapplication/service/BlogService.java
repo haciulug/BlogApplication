@@ -3,13 +3,12 @@ package com.scalefocus.blogapplication.service;
 import com.scalefocus.blogapplication.dto.BlogPostDto;
 import com.scalefocus.blogapplication.dto.BlogPostSummaryDto;
 import com.scalefocus.blogapplication.dto.TagDto;
-
-import java.util.List;
+import org.springframework.data.domain.Page;
 
 public interface BlogService {
     BlogPostDto createBlog(BlogPostDto blogDto);
 
-    List<BlogPostDto> getBlogs();
+    Page<BlogPostDto> getBlogs(int page, int size);
 
     BlogPostDto updateBlog(Long id, BlogPostDto blogDto);
 
@@ -17,9 +16,9 @@ public interface BlogService {
 
     BlogPostDto removeTag(Long id, String tagName);
 
-    List<BlogPostDto> getBlogsByTag(String tagName);
+    Page<BlogPostDto> getBlogsByTag(String tagName, int page, int size);
 
-    List<BlogPostSummaryDto> getSummarizedBlogs();
+    Page<BlogPostSummaryDto> getSummarizedBlogs(int page, int size);
 
     void deleteBlog(Long id);
 
@@ -27,5 +26,8 @@ public interface BlogService {
 
     BlogPostDto addTagByName(Long id, String tagName);
 
-    List<BlogPostDto> getBlogsByUser(Long userId);
+    Page<BlogPostDto> getBlogsByUser(Long userId, int page, int size);
+
+    Page<BlogPostDto> searchBlogs(String query, int page, int size);
+
 }

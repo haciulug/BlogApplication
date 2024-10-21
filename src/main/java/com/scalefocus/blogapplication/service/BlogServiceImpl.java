@@ -4,23 +4,28 @@ import com.scalefocus.blogapplication.dto.BlogPostDto;
 import com.scalefocus.blogapplication.dto.BlogPostSummaryDto;
 import com.scalefocus.blogapplication.dto.TagDto;
 import com.scalefocus.blogapplication.mapper.BlogPostMapper;
+import com.scalefocus.blogapplication.mapper.MediaFileMapper;
 import com.scalefocus.blogapplication.model.BlogPost;
 import com.scalefocus.blogapplication.model.Tag;
 import com.scalefocus.blogapplication.repository.BlogPostRepository;
 import com.scalefocus.blogapplication.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
+import org.hibernate.search.engine.search.query.SearchResult;
+import org.springframework.data.domain.Page;
+import org.hibernate.search.mapper.orm.Search;
+import org.hibernate.search.mapper.orm.session.SearchSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -32,12 +37,17 @@ public class BlogServiceImpl implements BlogService {
     private final BlogPostMapper blogPostMapper;
     private final TagService tagService;
     private final UserRepository userRepository;
+    private final MediaFileMapper mediaFileMapper;
 
-    public BlogServiceImpl(BlogPostRepository blogPostRepository, BlogPostMapper blogPostMapper, TagService tagService, UserRepository userRepository) {
+    private final EntityManager entityManager;
+
+    public BlogServiceImpl(BlogPostRepository blogPostRepository, BlogPostMapper blogPostMapper, TagService tagService, UserRepository userRepository, MediaFileMapper mediaFileMapper, EntityManager entityManager) {
         this.blogPostRepository = blogPostRepository;
         this.blogPostMapper = blogPostMapper;
         this.tagService = tagService;
         this.userRepository = userRepository;
+        this.mediaFileMapper = mediaFileMapper;
+        this.entityManager = entityManager;
     }
 
     @Override
@@ -65,8 +75,10 @@ public class BlogServiceImpl implements BlogService {
     }
 
     @Override
-    public List<BlogPostDto> getBlogs() {
-        return blogPostMapper.toDtoList(blogPostRepository.findAll());
+    public Page<BlogPostDto> getBlogs(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return blogPostRepository.findAll(pageable)
+                .map(blogPostMapper::toDto);
     }
 
     @Override
@@ -149,29 +161,58 @@ public class BlogServiceImpl implements BlogService {
     }
 
     @Override
-    public List<BlogPostDto> getBlogsByTag(String tagName) {
-        return blogPostMapper.toDtoList(blogPostRepository.findAllByTags_Name(tagName));
+    public Page<BlogPostDto> getBlogsByTag(String tagName, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return blogPostRepository.findAllByTags_Name(tagName, pageable)
+                .map(blogPostMapper::toDto);
     }
 
     @Override
-    public List<BlogPostSummaryDto> getSummarizedBlogs() {
-        List<BlogPost> blogPosts = blogPostRepository.findAll();
-        return blogPosts.stream()
-                .map(blogPostMapper::toSummaryDto)
-                .toList();
+    public Page<BlogPostSummaryDto> getSummarizedBlogs(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return blogPostRepository.findAll(pageable)
+                .map(blogPostMapper::toSummaryDto);
     }
 
     @Override
-    public List<BlogPostDto> getBlogsByUser(Long userId) {
+    public Page<BlogPostDto> getBlogsByUser(Long userId, int page, int size) {
         if (!userRepository.existsById(userId)) {
             LOGGER.error("User with id {} not found", userId);
             throw new EntityNotFoundException("User with id " + userId + " not found");
         }
-        List<BlogPost> blogPosts = blogPostRepository.findAllByUser_Id(userId);
+        Pageable pageable = PageRequest.of(page, size);
+        Page<BlogPost> blogPosts = blogPostRepository.findAllByUser_Id(userId, pageable);
         if (blogPosts.isEmpty()) {
             LOGGER.error("No blogs found for user with id {}", userId);
             throw new EntityNotFoundException("No blogs found for user with id " + userId);
         }
-        return blogPostMapper.toDtoList(blogPosts);
+        return blogPosts.map(blogPostMapper::toDto);
+    }
+
+    @Override
+    public Page<BlogPostDto> searchBlogs(String query, int page, int size) {
+        try {
+            Pageable pageable = PageRequest.of(page, size);
+            SearchSession searchSession = Search.session(entityManager);
+
+            SearchResult<BlogPost> result = searchSession.search(BlogPost.class)
+                    .where(f -> f.simpleQueryString()
+                            .fields("title", "content", "tags.name")
+                            .matching(query))
+                    .fetch((int) pageable.getOffset(), pageable.getPageSize());
+
+            List<BlogPost> blogPosts = result.hits();
+            long totalHits = result.total().hitCount();
+
+            List<BlogPostDto> dtos = blogPosts.stream()
+                    .map(blogPostMapper::toDto)
+                    .collect(Collectors.toList());
+
+            return new PageImpl<>(dtos, pageable, totalHits);
+        }
+        catch (Exception e) {
+            LOGGER.error("Error occurred while searching for blogs: {}", e.getMessage());
+            throw new RuntimeException("Error occurred while searching for blogs", e);
+        }
     }
 }

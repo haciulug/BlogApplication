@@ -28,7 +28,8 @@ public interface BlogPostMapper {
             @Mapping(target = "id", source = "id"),
             @Mapping(target = "title", source = "title"),
             @Mapping(target = "content", source = "content"),
-            @Mapping(target = "tags", source = "tags")
+            @Mapping(target = "tags", source = "tags"),
+            @Mapping(target = "mediaFiles", source = "mediaFiles")
     })
     BlogPostDto toDto(BlogPost blogPost);
 
@@ -36,7 +37,8 @@ public interface BlogPostMapper {
             @Mapping(target = "id", source = "id"),
             @Mapping(target = "title", source = "title"),
             @Mapping(target = "content", source = "content"),
-            @Mapping(target = "tags", source = "tags")
+            @Mapping(target = "tags", source = "tags"),
+            @Mapping(target = "mediaFiles", source = "mediaFiles")
     })
     BlogPost toEntity(BlogPostDto blogPostDto);
 
