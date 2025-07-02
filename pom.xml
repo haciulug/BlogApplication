@@ -11,7 +11,8 @@
 	<groupId>com.scalefocus</groupId>
 	<artifactId>BlogApplication</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>BlogApplication</name>
+    <packaging>pom</packaging>
+    <name>BlogApplication</name>
 	<description>BlogApplication</description>
 	<url/>
 	<licenses>
@@ -20,7 +21,11 @@
 	<developers>
 		<developer/>
 	</developers>
-	<scm>
+    <modules>
+        <module>blog-service</module>
+		<module>user-service</module>
+	</modules>
+    <scm>
 		<connection/>
 		<developerConnection/>
 		<tag/>
@@ -175,6 +180,16 @@
 			<artifactId>IVCompressor</artifactId>
 			<version>2.0.2</version>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.kafka</groupId>
+			<artifactId>spring-kafka</artifactId>
+			<version>3.2.3</version>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-jwt</artifactId>
+			<version>1.1.1.RELEASE</version>
+		</dependency>
 	</dependencies>
 	<build>
 		<plugins>
@@ -229,36 +244,6 @@
 				<groupId>io.fabric8</groupId>
 				<artifactId>docker-maven-plugin</artifactId>
 				<version>0.44.0</version>
-				<configuration>
-					<images>
-						<image>
-							<alias>blog-application</alias>
-							<name>${docker.image.prefix}/${docker.image.name}:${project.version}</name>
-							<build>
-								<dockerFileDir>${project.basedir}</dockerFileDir>
-								<assembly>
-									<descriptorRef>artifact</descriptorRef>
-								</assembly>
-							</build>
-						</image>
-					</images>
-				</configuration>
-				<executions>
-					<execution>
-						<id>build-image</id>
-						<phase>install</phase>
-						<goals>
-							<goal>build</goal>
-						</goals>
-					</execution>
-					<execution>
-						<id>push-image</id>
-						<phase>deploy</phase>
-						<goals>
-							<goal>push</goal>
-						</goals>
-					</execution>
-				</executions>
 			</plugin>
 			<plugin>
 				<groupId>org.sonarsource.scanner.maven</groupId>
